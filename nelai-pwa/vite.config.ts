@@ -118,6 +118,9 @@ export default defineConfig(({ mode, command }) => {
 
   return {
   base,
+  // Si algún plugin o el optimizador pide `index.html` vía grafo de módulos, sin esto
+  // `vite:import-analysis` intenta parsear el HTML como JS y falla (p. ej. junto a `</title>`).
+  assetsInclude: ['**/*.html'],
   server: {
     host: '0.0.0.0', // Permitir acceso desde la red local
     port: 5173,
@@ -319,10 +322,13 @@ export default defineConfig(({ mode, command }) => {
           }
         ]
       },
+      // En dev, generar el SW en `dev-dist/` puede fallar con ENOENT si el archivo aún no existe
+      // (p. ej. primer arranque o carpeta borrada). El PWA sigue activo en `vite build` / producción.
+      // Para probar SW en local: `VITE_PWA_DEV=true yarn dev` (tras un build previo suele ser más estable).
       devOptions: {
-        enabled: true,
+        enabled: process.env.VITE_PWA_DEV === 'true',
         type: 'module',
-      }
+      },
     })
   ],
   resolve: {

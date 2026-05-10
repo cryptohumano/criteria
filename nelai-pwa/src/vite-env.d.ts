@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+declare module '*.md?raw' {
+  const src: string
+  export default src
+}
+
 declare module 'vite/client' {
   interface ImportMetaEnv {
     readonly BASE_URL: string
@@ -13,6 +18,8 @@ declare module 'vite/client' {
     readonly VITE_API_PROXY_TARGET?: string
     /** `true`: Gemini vía proxy usa GEMINI_API_KEY en servidor + Bearer de sesión */
     readonly VITE_LLM_PROXY_USES_SERVER_KEY?: string
+    /** Etiqueta de versión en UI pública (p. ej. `beta 2025-05`). Si falta, se usa `beta v` + versión del package. */
+    readonly VITE_APP_RELEASE?: string
   }
 
   interface ImportMeta {

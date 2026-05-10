@@ -31,6 +31,9 @@ import PlatformOverview from '@/pages/platform/PlatformOverview'
 import PlatformOrganizations from '@/pages/platform/PlatformOrganizations'
 import PlatformUsers from '@/pages/platform/PlatformUsers'
 import PlatformLlm from '@/pages/platform/PlatformLlm'
+import ProductPage from '@/pages/public/ProductPage'
+import LegalTermsPage from '@/pages/public/LegalTermsPage'
+import LegalPrivacyPage from '@/pages/public/LegalPrivacyPage'
 
 // Obtener el base path desde import.meta.env.BASE_URL (configurado por Vite)
 // En desarrollo será '/', en producción será '/aura-pwa/' para GitHub Pages
@@ -55,6 +58,17 @@ export const router = createBrowserRouter([
       {
         path: 'auth/email-verified',
         element: <AuthEmailVerified />,
+      },
+      {
+        path: 'producto',
+        element: <ProductPage />,
+      },
+      {
+        path: 'legal',
+        children: [
+          { path: 'terminos', element: <LegalTermsPage /> },
+          { path: 'privacidad', element: <LegalPrivacyPage /> },
+        ],
       },
       {
         path: 'platform',
