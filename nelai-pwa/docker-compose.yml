@@ -42,8 +42,9 @@ services:
 
   etherpad:
     build:
-      context: ./etherpad
-      dockerfile: Dockerfile
+      # Contexto = raíz del monorepo (mismo que Railway cuando no hay Root Directory).
+      context: ..
+      dockerfile: nelai-pwa/etherpad/Dockerfile
       args:
         # Plugins para edición legal/académica:
         # - headings + TOC (documentos largos)
@@ -60,7 +61,7 @@ services:
       - '9001:9001'
     environment:
       NODE_ENV: production
-      TITLE: 'Nelai Etherpad (dev)'
+      TITLE: 'CriterIA Etherpad (dev)'
       ADMIN_PASSWORD: ${ETHERPAD_ADMIN_PASSWORD:-admin}
       # Necesario para habilitar la HTTP API por API key (lee /opt/etherpad-lite/APIKEY.txt).
       AUTHENTICATION_METHOD: 'apikey'

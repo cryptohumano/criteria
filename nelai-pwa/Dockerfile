@@ -35,7 +35,8 @@ RUN corepack enable
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn/patches ./.yarn/patches
 
-RUN --mount=type=cache,target=/root/.yarn/berry/cache \
+# Railway exige `id=` en los mounts de cache de BuildKit; sin él el build falla.
+RUN --mount=type=cache,id=yarn-berry,target=/root/.yarn/berry/cache \
     yarn install --immutable
 
 ############################

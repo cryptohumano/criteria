@@ -16,11 +16,14 @@ RUN apk add --no-cache \
 # Customizaciones mínimas de UI para embed (iframe):
 # - Ocultar el botón "Home" para evitar navegación al home de la webapp.
 RUN mkdir -p /opt/etherpad-lite/src/static/custom
-COPY custom/pad.css /opt/etherpad-lite/src/static/custom/pad.css
+
+# Contexto de build: raíz del repositorio (Railway suele enviar el repo completo).
+# Desde `nelai-pwa/` en local: ver docker-compose (context: ..).
+COPY nelai-pwa/etherpad/custom/pad.css /opt/etherpad-lite/src/static/custom/pad.css
 
 # Entrypoint: materializa APIKEY.txt desde la variable ETHERPAD_API_KEY al arrancar.
 # Permite rotar la key sin reconstruir la imagen ni commitear secretos.
-COPY entrypoint.sh /usr/local/bin/criteria-etherpad-entrypoint.sh
+COPY nelai-pwa/etherpad/entrypoint.sh /usr/local/bin/criteria-etherpad-entrypoint.sh
 RUN chmod +x /usr/local/bin/criteria-etherpad-entrypoint.sh \
   && touch /opt/etherpad-lite/APIKEY.txt \
   && chown etherpad:etherpad /opt/etherpad-lite/APIKEY.txt

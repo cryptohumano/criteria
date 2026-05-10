@@ -30,9 +30,17 @@ detalla los pasos manuales en Railway, Stripe, Google Cloud y MailerSend.
 
 1. **Add → GitHub Repo** apuntando al repo de CriterIA.
 2. En **Settings → Source** marca:
-   - Root Directory: `nelai-pwa/etherpad`
-   - Build: Dockerfile (Railway lo detecta vía `railway.json` que ya está en
-     `nelai-pwa/etherpad/railway.json`).
+   - **Root Directory: vacío** (raíz del repositorio — **no** uses solo
+     `nelai-pwa/etherpad`). El `Dockerfile` copia rutas `nelai-pwa/etherpad/…`
+     respecto a la raíz del monorepo; si el contexto es solo la subcarpeta,
+     falla `COPY` con `entrypoint.sh not found`.
+   - **Dockerfile path:** `nelai-pwa/etherpad/Dockerfile` (en la UI de Railway:
+     *Settings → Build → Dockerfile path*, o equivalente según la versión del
+     dashboard).
+   - Alternativa válida: Root Directory `nelai-pwa` y Dockerfile path
+     `etherpad/Dockerfile` **solo si** adapatas el Dockerfile a rutas relativas
+     a esa carpeta; la configuración recomendada es raíz del repo + rutas fijas
+     como arriba.
 3. **Networking**: NO añadas dominio público. Habilita "Private Networking"
    (viene activo por defecto). Etherpad solo se llama desde `criteria-api` por
    `${{etherpad.RAILWAY_PRIVATE_DOMAIN}}`.
@@ -72,8 +80,12 @@ detalla los pasos manuales en Railway, Stripe, Google Cloud y MailerSend.
 
 1. **Add → GitHub Repo** (el mismo repo).
 2. **Settings → Source**:
-   - Root Directory: `nelai-pwa`
-   - Build: Dockerfile (lee `nelai-pwa/railway.json`).
+   - **Root Directory:** `nelai-pwa` (recomendado: el contexto de Docker coincide
+     con `COPY package.json`, `yarn.lock`, etc. del Dockerfile).
+   - **Dockerfile path:** `Dockerfile` (por defecto en esa carpeta).
+   - Si dejas la raíz del repo vacía, usa Dockerfile path `nelai-pwa/Dockerfile`
+     y tendrías que ajustar todas las rutas `COPY` del Dockerfile — **no** está
+     soportado en la imagen actual; mantén Root Directory `nelai-pwa`.
 3. **Networking**: genera un dominio público (Railway-managed o custom). Lo
    referenciaremos como `${{RAILWAY_PUBLIC_DOMAIN}}`.
 4. **Variables** (ver sección [§2](#2-variables-de-entorno-de-criteria-api)).
@@ -246,6 +258,8 @@ retornar 2xx salvo donde se indique.
 
 | Síntoma | Causa más probable | Acción |
 | --- | --- | --- |
+| Build `criteria-api`: `flag '--mount=type=cache' is missing an id argument` | BuildKit en Railway exige `id=` en cache mounts | Ya corregido en `nelai-pwa/Dockerfile` (`id=yarn-berry`); haz pull y redeploy. |
+| Build `etherpad`: `"/entrypoint.sh": not found` | Root Directory mal: el contexto no incluye `entrypoint.sh` donde el Dockerfile lo espera | Usa **raíz del repo** + Dockerfile path `nelai-pwa/etherpad/Dockerfile` (ver §1.3). No uses solo `nelai-pwa/etherpad` salvo que adaptes el Dockerfile. |
 | 502 al cargar `/pad` | `ETHERPAD_INTERNAL_URL` mal o servicio etherpad caído | Revisa logs del servicio etherpad y la variable. |
 | Pads no sincronizan | `upgrade` no llega al proxy | Verifica `attachEtherpadWebSocketUpgrade` en logs y que `ws: true` esté en el middleware. |
 | Webhook Stripe falla | `STRIPE_WEBHOOK_SECRET` desactualizado tras recrear el endpoint | Copia el nuevo `whsec_...` y redeploya. |

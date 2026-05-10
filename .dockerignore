@@ -1,0 +1,12 @@
+# Al construir con contexto = raíz del monorepo (docker compose etherpad, Railway
+# con Root Directory vacío), excluimos peso que ningún Dockerfile de la raíz usa.
+# — criteria-api (Root Directory `nelai-pwa`) no lee este archivo: su contexto es
+#   solo `nelai-pwa/` y usa `nelai-pwa/.dockerignore`.
+.git
+.github
+
+nelai-pwa/node_modules
+nelai-pwa/dist
+nelai-pwa/dev-dist
+nelai-pwa/.yarn/cache
+nelai-pwa/.yarn/install-state.gz
