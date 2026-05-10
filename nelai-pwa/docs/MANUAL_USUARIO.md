@@ -1,4 +1,4 @@
-# Manual de usuario (Nelai PWA)
+# Manual de usuario (CriterIA PWA)
 
 Este manual describe **qué hace la webapp** y **cómo usarla** desde la perspectiva del usuario final.
 
@@ -136,7 +136,8 @@ Son warnings de i18n del editor (no afectan el funcionamiento). Se pueden person
 
 Este documento es para usuarios. Para operación técnica/verificación de setup, ver:
 
-- `MIGRATION.md` (arquitectura Etherpad embed + agente)
-- `server/README.md` (backend/API)
-- `docs/KEYRING_FLOW.md` (flujo de keyring)
+- `../README.md` (visión general del paquete)
+- `../server/README.md` (backend/API)
+- `../RAILWAY_DEPLOY.md` (despliegue en Railway)
+- `KEYRING_FLOW.md` (flujo de keyring)
 

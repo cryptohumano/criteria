@@ -1,4 +1,4 @@
-# Nelai sin blockchain: cripto, agentes y persistencia
+# CriterIA sin blockchain: cripto, agentes y persistencia
 
 Cómo funcionan los agentes y la persistencia cuando **no hay blockchain**, pero sí **herramientas criptográficas** (firmas, hashes). Y cómo el usuario saca ventaja en escenarios **offline**, **descentralizados** y **centralizados** — incluyendo redes sociales con creación/edición nativa.
 
@@ -51,7 +51,7 @@ El usuario puede elegir **dónde** vive el contenido y **dónde** vive la prueba
 ```
 
 - **Totalmente offline:** Archivo + metadata + firma solo en el dispositivo (y en copias que el usuario haga —USB, otro dispositivo—). El Verificador funciona con ese archivo y ese JSON de metadata/firma; no hace falta conexión. Ventaja: máximo control, cero dependencia de terceros.
-- **Centralizada:** El usuario sube el archivo (y opcionalmente el sello) a un servidor, una app o una **red social**. La red puede tener sus propias herramientas de creación/edición. La ventaja de Nelai: el usuario **también** genera un sello propio (hash + firma con su clave). Aunque la red guarde otra versión o permita editar, el sello atesta “esta versión exacta la firmé yo en este momento”. Si en el futuro la red exporta o permite adjuntar “prueba de origen”, el usuario ya tiene esa prueba (portable) y puede verificarla en Nelai.
+- **Centralizada:** El usuario sube el archivo (y opcionalmente el sello) a un servidor, una app o una **red social**. La red puede tener sus propias herramientas de creación/edición. La ventaja de CriterIA: el usuario **también** genera un sello propio (hash + firma con su clave). Aunque la red guarde otra versión o permita editar, el sello atesta “esta versión exacta la firmé yo en este momento”. Si en el futuro la red exporta o permite adjuntar “prueba de origen”, el usuario ya tiene esa prueba (portable) y puede verificarla en CriterIA.
 - **Descentralizada:** Publicación en DKG (UAL), IPFS (CID), o blockchain (txHash). La prueba es descubrible y verificable por cualquiera que tenga el identificador, sin depender de un solo servidor.
 
 Los **agentes** funcionan en los tres escenarios: el Verificador solo necesita el archivo (o su hash) + metadata + firma; el Guía explica qué implica cada opción de guardado (local, centralizado, descentralizado).
@@ -62,10 +62,10 @@ Los **agentes** funcionan en los tres escenarios: el Verificador solo necesita e
 
 Muchas redes ya ofrecen creación y edición en la propia plataforma (fotos, vídeos, texto). Ahí el “archivo” puede vivir solo en la red y cambiar con cada edición.
 
-**Cómo puede sacar ventaja el usuario con Nelai:**
+**Cómo puede sacar ventaja el usuario con CriterIA:**
 
 1. **Sello fuera de la red (offline / en tu control)**  
-   Antes o después de publicar, el usuario genera en Nelai (o en una app tipo Andino/Nelai) el **contentHash** del contenido que quiere atestar y lo **firma** con su clave. Ese sello (metadata + firma) lo guarda:
+   Antes o después de publicar, el usuario genera en CriterIA (o en una app tipo Andino/CriterIA) el **contentHash** del contenido que quiere atestar y lo **firma** con su clave. Ese sello (metadata + firma) lo guarda:
    - solo en su dispositivo, o  
    - en un servicio que elija, o  
    - lo publica en DKG/IPFS y obtiene un UAL/CID.  
@@ -73,7 +73,7 @@ Muchas redes ya ofrecen creación y edición en la propia plataforma (fotos, ví
    La red social no tiene por qué saber de ese sello; el usuario tiene una **prueba independiente** de “esta versión la firmé yo”.
 
 2. **Verificación en cualquier contexto**  
-   Si más adelante alguien recibe una copia del contenido (por la red, por otro canal) y tiene también la metadata + firma (o el UAL), puede usar el **Agente Verificador** (en Nelai o en otra app que entienda el mismo formato) y obtener: quién firmó, cuándo, si el contenido coincide con el hash. Así la verificación **no depende** de que la red social lo implemente; depende de estándares abiertos (metadata canónica, firmas criptográficas).
+   Si más adelante alguien recibe una copia del contenido (por la red, por otro canal) y tiene también la metadata + firma (o el UAL), puede usar el **Agente Verificador** (en CriterIA o en otra app que entienda el mismo formato) y obtener: quién firmó, cuándo, si el contenido coincide con el hash. Así la verificación **no depende** de que la red social lo implemente; depende de estándares abiertos (metadata canónica, firmas criptográficas).
 
 3. **Ventaja offline**  
    El usuario puede **firmar y guardar sellos** sin conexión (en el móvil en la montaña, en un portátil sin internet). Luego, cuando tenga conexión, puede:
@@ -84,7 +84,7 @@ Muchas redes ya ofrecen creación y edición en la propia plataforma (fotos, ví
    La ventaja offline es **soberanía del sello**: la prueba de origen se genera y se guarda donde el usuario decida, no donde la red social decida.
 
 4. **Futuro: redes que adopten “proof of origin”**  
-   Si una red social (o un estándar tipo Content Credentials/C2PA) permite **adjuntar** o **importar** una prueba de origen (hash + firma o UAL), el usuario que ya usa Nelai tendría esas pruebas listas. Nelai podría actuar como **generador de sellos** compatibles con ese ecosistema (centralizado o descentralizado).
+   Si una red social (o un estándar tipo Content Credentials/C2PA) permite **adjuntar** o **importar** una prueba de origen (hash + firma o UAL), el usuario que ya usa CriterIA tendría esas pruebas listas. CriterIA podría actuar como **generador de sellos** compatibles con ese ecosistema (centralizado o descentralizado).
 
 ---
 
@@ -93,8 +93,8 @@ Muchas redes ya ofrecen creación y edición en la propia plataforma (fotos, ví
 | Capa | Ventaja para el usuario |
 |------|-------------------------|
 | **Offline** | Crear y firmar evidencias sin internet; guardar todo en dispositivo; verificar con archivo + metadata + firma sin red. Control total. |
-| **Centralizada** | Usar redes sociales o servidores para almacenar/distribuir contenido, pero **mantener un sello independiente** (en dispositivo o en un servicio propio). Verificar en Nelai sin depender de que la red implemente verificación. |
+| **Centralizada** | Usar redes sociales o servidores para almacenar/distribuir contenido, pero **mantener un sello independiente** (en dispositivo o en un servicio propio). Verificar en CriterIA sin depender de que la red implemente verificación. |
 | **Descentralizada** | Publicar el sello (o un Knowledge Asset) en DKG/IPFS/blockchain y obtener un identificador (UAL, CID, txHash). Cualquiera con ese ID puede verificar; la prueba no depende de un solo actor. |
 | **Agentes sin blockchain** | El **Verificador** sigue dando reportes (quién firmó, integridad) con solo criptografía. El **Guía** explica qué implica cada opción (local, centralizado, descentralizado) y cómo aprovechar offline y portabilidad. |
 
-La idea central: **la identidad criptográfica y el sello (metadata + firma) son del usuario y portables**. La persistencia (offline, centralizada, descentralizada) es una **elección** que él hace según contexto; Nelai puede operar en los tres modos y los agentes tienen sentido en todos.
+La idea central: **la identidad criptográfica y el sello (metadata + firma) son del usuario y portables**. La persistencia (offline, centralizada, descentralizada) es una **elección** que él hace según contexto; CriterIA puede operar en los tres modos y los agentes tienen sentido en todos.

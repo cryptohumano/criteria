@@ -91,7 +91,7 @@ Comprueba si el servicio está disponible y los certificados cargados.
 
 ### POST /api/llm-proxy
 
-**Proxy para Gemini API** — evita CORS cuando la PWA está desplegada (p. ej. GitHub Pages).
+**Proxy para Gemini API** — evita CORS y mantiene la API key del lado servidor.
 
 **Modo clásico (clave en el cliente):** body con `apiKey`, `model`, `body` (payload de `generateContent`).
 
@@ -115,9 +115,11 @@ Con **Prisma + PostgreSQL**: registro e inicio devuelven `accessToken`, `user` y
 
 Sin base de datos, el proceso sigue usando **usuarios en memoria** (demo; se pierden al reiniciar).
 
-### Etherpad (migración colaborativa)
+### Etherpad (editor colaborativo)
 
-Rutas bajo `/api/docs` (Bearer obligatorio): creación de URL para embed, lectura de texto del pad y **esqueleto** `agent/run` + `agent/apply`. Variables: `ETHERPAD_BASE_URL`, `ETHERPAD_PUBLIC_URL`, `ETHERPAD_API_KEY` (ver `.env.example`). Compose y ejemplo `curl`: **`../../MIGRATION.md`** en el árbol `nelai-etherpad`.
+Rutas bajo `/api/docs` (Bearer obligatorio): creación de URL para embed, lectura de texto del pad y `agent/run` + `agent/apply`. Variables: `ETHERPAD_BASE_URL`, `ETHERPAD_PUBLIC_URL`, `ETHERPAD_API_KEY` (ver `.env.example`).
+
+En **producción** (Railway u otro hosting) la PWA y el API son el mismo origen, así que el navegador no debe ver el dominio interno de Etherpad. El backend monta un **reverse-proxy** sobre `/pad`, `/socket.io`, `/p`, `/ep`, `/static`, `/locales`, `/pluginfw`, `/jserror` cuando `ETHERPAD_INTERNAL_URL` está definida (ver `server/etherpad/proxy.ts`). El upgrade a WebSocket se conecta manualmente al `httpServer` para que `socket.io` sincronice los pads.
 
 ## Integración con la PWA
 
@@ -176,3 +178,16 @@ Override por env (sufijo según `tokenPeriod` del plan):
 ### Tokens extra (metered) — fase siguiente
 
 En Stripe: crear un **Price** metered (o **usage record** sobre un subscription item), reportar consumo vía API o Billing Meters; enlazarlo al checkout o al portal como add-on. El código actual cubre suscripción base + cupos en base de datos; el cobro variable por “+2M tokens” se integra cuando definas el Price metered y el reporting.
+
+## Despliegue en Railway
+
+Guía operativa completa: [`../RAILWAY_DEPLOY.md`](../RAILWAY_DEPLOY.md). Resumen:
+
+- Imagen Docker multi-stage en [`../Dockerfile`](../Dockerfile) (base `node:22-bookworm` por compatibilidad con `@contentauth/c2pa-node` y `bcryptjs`).
+- `railway.json` apunta el builder a Dockerfile y el healthcheck a `/api/c2pa-health`.
+- En producción Railway inyecta `PORT`; el server lo respeta y aplica `app.set('trust proxy', 1)` para que los rate limits y cookies "secure" funcionen detrás del edge proxy.
+- Etherpad corre como servicio separado en la red privada de Railway; el reverse-proxy del Express lo expone same-origin sobre `/pad`, `/socket.io`, etc.
+
+## Licencia
+
+El servidor es parte del proyecto CriterIA, distribuido bajo **FSL-1.1-MIT**. Texto íntegro en [`../../LICENSE`](../../LICENSE).

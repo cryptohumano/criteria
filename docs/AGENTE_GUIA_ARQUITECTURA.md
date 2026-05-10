@@ -1,6 +1,6 @@
 # Agente Guía — Arquitectura y Configuración
 
-Documento de diseño para el **Agente Guía** de Nelai: explica al usuario qué datos serán públicos, cuáles privados, riesgos de privacidad y verificabilidad **antes** de confirmar acciones sensibles (registrar on-chain, publicar en DKG).
+Documento de diseño para el **Agente Guía** de CriterIA: explica al usuario qué datos serán públicos, cuáles privados, riesgos de privacidad y verificabilidad **antes** de confirmar acciones sensibles (registrar on-chain, publicar en DKG).
 
 ---
 
@@ -23,7 +23,7 @@ Antes de que el usuario confirme:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AGENTE GUÍA (Nelai)                                  │
+│                         AGENTE GUÍA (CriterIA)                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   ┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐   │
@@ -374,4 +374,4 @@ Usuario          ImageGallery       useGuideAgent      GuideModal       guideAge
 
 ---
 
-*Documento de diseño — Nelai / iSAFE Hackathon 2026*
+*Documento de diseño — CriterIA / iSAFE Hackathon 2026*

@@ -1,8 +1,8 @@
-# Esquema de metadata y flujo de firma (Nelai)
+# Esquema de metadata y flujo de firma (CriterIA)
 
-Documento técnico complementario a `PLAN.md`: formato de metadata firmable y flujo de firma/verificación.
+Formato de metadata firmable y flujo de firma/verificación de CriterIA.
 
-**Estándar de referencia:** El formato canónico de procedencia y autenticidad es **Content Credentials (C2PA)**. El stack y este esquema se alinean a C2PA (claim + assertions estándar); la identidad Polkadot se expresa como assertion custom `org.nelai.polkadot` para redundancia y resiliencia. Ver `CONTENT_CREDENTIALS_C2PA_VINCULACION.md`.
+**Estándar de referencia:** el formato canónico de procedencia y autenticidad es **Content Credentials (C2PA)**. El stack y este esquema se alinean a C2PA (claim + assertions estándar); la identidad Polkadot se expresa como assertion custom `org.nelai.polkadot` por compatibilidad con manifiestos previos. Ver `CONTENT_CREDENTIALS_C2PA_VINCULACION.md`.
 
 ---
 
@@ -86,4 +86,4 @@ Así el Verificador puede, dado un UAL, decir “esta evidencia está anclada en
 - Verificación: `@polkadot/util-crypto` / `signatureVerify`.
 - Hashing: `@polkadot/util-crypto` blake2 o `crypto.subtle` SHA-256 en browser.
 
-Este esquema se puede implementar en un módulo `metadata-signing` dentro del repo Andino o en Nelai.
+Este esquema se puede implementar en un módulo `metadata-signing` dentro del repo Andino o en CriterIA.

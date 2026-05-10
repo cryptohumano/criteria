@@ -1,4 +1,4 @@
-# Implementación de agentes (Nelai)
+# Implementación de agentes (CriterIA)
 
 Opciones concretas para el **Agente Guía** y el **Agente Verificador**, alineados con Track 2 y con uso mínimo de dependencias externas al inicio.
 
