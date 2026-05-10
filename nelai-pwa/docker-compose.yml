@@ -1,0 +1,94 @@
+# PostgreSQL dedicado al proyecto (nelai-pwa). Host 5433 -> contenedor 5432
+# para no interferir con otro Postgres en 5432.
+# Etherpad Lite + Postgres propio (puerto app 9001). Ver MIGRATION.md y .env.example (ETHERPAD_*).
+# Uso:
+#   docker compose up -d db
+#   docker compose up -d              # db + etherpad + etherpad-postgres
+#   yarn docker:db:up                 # todo lo definido en este archivo
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: nelai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nelai
+      POSTGRES_PASSWORD: nelai_dev_local
+      POSTGRES_DB: nelai
+    ports:
+      - "5433:5432"
+    volumes:
+      - nelai_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nelai -d nelai']
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+  etherpad-postgres:
+    image: postgres:16-alpine
+    container_name: nelai-etherpad-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: etherpad
+      POSTGRES_PASSWORD: etherpad_dev_local
+      POSTGRES_DB: etherpad
+    volumes:
+      - nelai_etherpad_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U etherpad -d etherpad']
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  etherpad:
+    build:
+      context: ./etherpad
+      dockerfile: Dockerfile
+      args:
+        # Plugins para edición legal/académica:
+        # - headings + TOC (documentos largos)
+        # - markdown (import/export)
+        # - latex (fórmulas)
+        # - tables5 (tablas básicas; plugin antiguo pero útil en dev)
+        ETHERPAD_PLUGINS: 'ep_headings2 ep_table_of_contents ep_markdown ep_mathjax'
+    container_name: nelai-etherpad
+    restart: unless-stopped
+    depends_on:
+      etherpad-postgres:
+        condition: service_healthy
+    ports:
+      - '9001:9001'
+    environment:
+      NODE_ENV: production
+      TITLE: 'Nelai Etherpad (dev)'
+      ADMIN_PASSWORD: ${ETHERPAD_ADMIN_PASSWORD:-admin}
+      # Necesario para habilitar la HTTP API por API key (lee /opt/etherpad-lite/APIKEY.txt).
+      AUTHENTICATION_METHOD: 'apikey'
+      DB_TYPE: postgres
+      DB_HOST: etherpad-postgres
+      DB_PORT: '5432'
+      DB_NAME: etherpad
+      DB_USER: etherpad
+      DB_PASS: etherpad_dev_local
+      DEFAULT_PAD_TEXT: ' '
+      PAD_OPTIONS_SHOW_CHAT: 'false'
+      TRUST_PROXY: 'false'
+      # Export/import avanzado vía LibreOffice instalado en la imagen custom.
+      SOFFICE: '/usr/bin/soffice'
+      # Seguridad básica: no permitir pads anónimos (solo mediante sesiones de grupo creadas por la API).
+      REQUIRE_SESSION: 'true'
+      EDIT_ONLY: 'true'
+      # Pegados largos: subir límite de buffer de Socket.IO (default suele ser 50000 bytes).
+      # Si pegas HTML grande (Docs/Word/web), puede exceder 2MB. Subimos a 10MB.
+      SOCKETIO_MAX_HTTP_BUFFER_SIZE: '10000000'
+    volumes:
+      - nelai_etherpad_var:/opt/etherpad-lite/var
+      # API key estática para la HTTP API de Etherpad.
+      - ./etherpad/APIKEY.txt:/opt/etherpad-lite/APIKEY.txt:ro
+      # Lista de plugins habilitados (sobre-escribe el archivo dentro del volumen).
+      - ./etherpad/installed_plugins.json:/opt/etherpad-lite/var/installed_plugins.json:ro
+
+volumes:
+  nelai_pgdata:
+  nelai_etherpad_pgdata:
+  nelai_etherpad_var:

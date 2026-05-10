@@ -1,0 +1,196 @@
+// CriterIA — PostgreSQL (Prisma ORM 7) — B2B + B2C + API keys + uso
+// URL de conexión: prisma.config.ts (variable DATABASE_URL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Tipo de contenedor de facturación y miembros.
+enum OrganizationKind {
+  /// Empresa o equipo (B2B).
+  team
+  /// Cuenta individual (B2C); un solo miembro con rol owner.
+  personal
+}
+
+/// Rol del usuario *dentro* de su organización.
+enum OrgMemberRole {
+  owner
+  admin
+  member
+}
+
+/// Rol a nivel *plataforma* (no expuesto al registro público; p. ej. operaciones internas).
+enum UserPlatformRole {
+  none
+  superadmin
+}
+
+/// Unidad de medición para facturación / cuotas.
+enum UsageUnit {
+  /// Una llamada a API o job acotado.
+  request
+  /// Tokens (entrada+salida agregables por fila o por lote).
+  token
+}
+
+/// Tenant: empresa, equipo, o cuenta personal (B2C).
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  plan      String   @default("trial") // trial | starter | pro | enterprise (catálogo: server/billing/planCatalog.ts)
+  kind      OrganizationKind @default(team) @map("kind")
+  /// Customer en Stripe (u otro PSP); se rellena tras checkout / webhook.
+  stripeCustomerId String? @map("stripe_customer_id")
+  stripeSubscriptionId String? @map("stripe_subscription_id")
+  stripeSubscriptionStatus String? @map("stripe_subscription_status")
+  stripeCurrentPeriodStart DateTime? @map("stripe_current_period_start")
+  stripeCurrentPeriodEnd DateTime? @map("stripe_current_period_end")
+  /// Fin del trial de 14 días (solo producto; no sustituye facturación Stripe).
+  trialEndsAt DateTime? @map("trial_ends_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  users     User[]
+  apiKeys   ApiKey[]
+  usageEvents UsageEvent[]
+
+  @@map("organizations")
+}
+
+/// Usuario (email/contraseña y/o Google OAuth).
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  displayName   String?  @map("display_name")
+  /// Vacío si el usuario solo entra con Google (`googleSub`).
+  passwordHash  String?  @map("password_hash")
+  /// Subject estable de Google (`sub`); vincula la cuenta OAuth.
+  googleSub     String?  @unique @map("google_sub")
+  /// Verificación de correo (registro con contraseña). OAuth Google la rellena al crear/vincular.
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  orgRole       OrgMemberRole    @default(owner) @map("org_role")
+  platformRole  UserPlatformRole @default(none) @map("platform_role")
+  organizationId String  @map("organization_id")
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  sessions      Session[]
+  usageEvents   UsageEvent[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+/// Enlace mágico de un solo uso para verificar correo tras registro con contraseña.
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  usedAt    DateTime? @map("used_at")
+
+  @@unique([tokenHash])
+  @@index([userId, createdAt])
+  @@map("email_verification_tokens")
+}
+
+/// Sesión Bearer opaca (sustituir por refresh tokens / Redis en producción a escala).
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Clave de API del tenant (integraciones, jobs). El valor en claro solo se muestra al crear; aquí va el hash.
+model ApiKey {
+  id             String   @id @default(cuid())
+  organizationId String @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Etiqueta interna: "Producción", "CI", etc.
+  name           String?
+  /// Primeros caracteres para listados; el secreto completo nunca se guarda.
+  tokenPrefix    String   @map("token_prefix")
+  /// sha256 (hex) del token completo `criteria_...` (legacy: `nelai_...`).
+  tokenHash      String   @unique @map("token_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+  lastUsedAt     DateTime? @map("last_used_at")
+  revokedAt      DateTime? @map("revoked_at")
+  usageEvents    UsageEvent[]
+
+  @@index([organizationId])
+  @@map("api_keys")
+}
+
+/// Claves de proveedores de IA a nivel plataforma (p. ej. Google Gemini), cifradas en reposo.
+/// No confundir con `ApiKey` (integración B2B por org) ni con BYOK en el dispositivo del usuario.
+model PlatformLlmCredential {
+  id     String @id @default(cuid())
+  /// p. ej. `gemini` — se amplía a openai/anthropic cuando haya proxy.
+  provider String @unique
+  /// AES-256-GCM, base64url (iv+tag+payload)
+  secretEnc          String   @map("secret_enc")
+  last4              String?  @map("last4")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  updatedByUserId    String?  @map("updated_by_user_id")
+
+  @@map("platform_llm_credentials")
+}
+
+/// Evento append-only de consumo: agregación por org / periodo para facturación y cuotas.
+model UsageEvent {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKeyId       String?  @map("api_key_id")
+  apiKey         ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  userId         String?  @map("user_id")
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// p.ej. `llm.completion`, `c2pa.sign`, `export.pdf`
+  kind           String
+  unit           UsageUnit
+  quantity       Int      @default(1)
+  model          String?
+  /// Idempotencia o correlación con logs (X-Request-ID).
+  requestId      String?  @map("request_id")
+  meta           Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([apiKeyId])
+  @@index([userId])
+  @@map("usage_events")
+}
+
+/// Redacciones manuales reversibles (placeholder -> valor original cifrado).
+/// Se ligan al documento (docId) y tenant (organizationId) para control de acceso.
+model DocumentRedaction {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  docId          String   @map("doc_id")
+  /// Marcador insertado en el pad (formato actual: `[[CRITERIA_REDACT_<id>]]`; legacy: ⟦NELAI:REDACT:<uuid>⟧).
+  placeholder    String
+  /// Texto original cifrado (AES-256-GCM, base64url)
+  originalEnc    String   @map("original_enc")
+  createdAt      DateTime @default(now()) @map("created_at")
+  restoredAt     DateTime? @map("restored_at")
+
+  @@index([organizationId, docId, createdAt])
+  @@index([organizationId, docId, restoredAt])
+  @@unique([organizationId, docId, placeholder])
+  @@map("document_redactions")
+}

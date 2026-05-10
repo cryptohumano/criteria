@@ -1,0 +1,161 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { isSaaSWorkspaceMode } from '@/config/appMode'
+import { getGoogleOAuthStartUrl, resendVerificationEmail } from '@/services/workspace/workspaceAuthApi'
+
+export default function Login() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { session, signIn, isHydrated } = useWorkspaceSession()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [resendMsg, setResendMsg] = useState('')
+
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/'
+
+  useEffect(() => {
+    if (!isSaaSWorkspaceMode()) {
+      navigate('/', { replace: true })
+    }
+  }, [navigate])
+
+  useEffect(() => {
+    if (isHydrated && session) {
+      navigate(from, { replace: true })
+    }
+  }, [isHydrated, session, navigate, from])
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      setResendMsg('')
+      await signIn(email.trim(), password)
+      navigate(from, { replace: true })
+    } catch (err) {
+      setResendMsg('')
+      setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-muted-foreground text-sm">Cargando…</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="flex justify-end p-4">
+        <ThemeToggle />
+      </div>
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md border shadow-sm">
+          <CardHeader>
+            <CardTitle>Iniciar sesión</CardTitle>
+            <CardDescription>
+              Accede al espacio de trabajo de tu organización. La firma criptográfica de documentos se
+              configura después en esta misma app.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const googleUrl = getGoogleOAuthStartUrl()
+              return googleUrl ? (
+                <div className="mb-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={loading}
+                    onClick={() => {
+                      window.location.href = googleUrl
+                    }}
+                  >
+                    Continuar con Google
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground mt-2">o con correo y contraseña</p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mb-4 rounded-md border border-dashed px-3 py-2">
+                  Google OAuth requiere API y variables en el servidor (ver <code className="text-[10px]">.env.example</code>).
+                </p>
+              )
+            })()}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Correo</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Contraseña</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={4}
+                />
+              </div>
+              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {error.includes('Verifica tu correo') ? (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={loading || !email.trim()}
+                    onClick={async () => {
+                      setResendMsg('')
+                      setError('')
+                      try {
+                        await resendVerificationEmail(email.trim())
+                        setResendMsg('Si el correo está pendiente de verificación, te hemos enviado un nuevo enlace.')
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : 'No se pudo reenviar')
+                      }
+                    }}
+                  >
+                    Reenviar enlace de verificación
+                  </Button>
+                  {resendMsg ? <p className="text-xs text-muted-foreground">{resendMsg}</p> : null}
+                </div>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Entrando…' : 'Entrar'}
+              </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                ¿Nueva organización?{' '}
+                <Link to="/register" className="text-primary underline-offset-4 hover:underline">
+                  Crear cuenta
+                </Link>
+              </p>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}

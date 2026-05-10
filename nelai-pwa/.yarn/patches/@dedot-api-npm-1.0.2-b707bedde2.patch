@@ -1,0 +1,25 @@
+diff --git a/json-rpc/group/ChainHead/ChainHead.js b/json-rpc/group/ChainHead/ChainHead.js
+index 4a3d7f69742cdb8c937d6b4b0d85cef5a5595776..6b6c4d8cd6af8b846d87921630d5148c862ab4d5 100644
+--- a/json-rpc/group/ChainHead/ChainHead.js
++++ b/json-rpc/group/ChainHead/ChainHead.js
+@@ -269,7 +269,7 @@ export class ChainHead extends JsonRpcGroup {
+                 const newBestBlock = this.findBlock(bestBlockHash);
+                 if (!newBestBlock)
+                     return;
+-                if (currentBestBlock.hash === newBestBlock.hash)
++                if (!currentBestBlock || currentBestBlock.hash === newBestBlock.hash)
+                     return;
+                 // Detect and fill gaps before updating best hash
+                 if (this.#lastBestBlockNumber !== undefined) {
+@@ -285,7 +285,10 @@ export class ChainHead extends JsonRpcGroup {
+             }
+             case 'finalized': {
+                 const { finalizedBlockHashes, prunedBlockHashes } = result;
+-                const currentFinalizedNumber = this.findBlock(this.#finalizedHash).number;
++                const finalizedBlock = this.findBlock(this.#finalizedHash);
++                if (!finalizedBlock)
++                    return;
++                const currentFinalizedNumber = finalizedBlock.number;
+                 for (const hash of finalizedBlockHashes) {
+                     const block = this.findBlock(hash);
+                     // Skip if block not found OR blocks that are already finalized (block number <= previous finalized number)

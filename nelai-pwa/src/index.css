@@ -1,0 +1,446 @@
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+
+  /* Light Mode - Paleta Nelai (teal + índigo) */
+  --background: 160 20% 98%;        /* Fondo neutro con tinte verde suave */
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 166 76% 32%;           /* Teal: #0D9488 - verificación, confianza */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 239 84% 67%;            /* Índigo: #6366F1 - identidad */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 166 76% 32%;
+  --chart-1: 166 76% 32%;
+  --chart-2: 239 84% 67%;
+  --chart-3: 197 37% 24%;
+  --chart-4: 43 74% 66%;
+  --chart-5: 27 87% 67%;
+  /* Sidebar variables */
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 222.2 84% 4.9%;
+  --sidebar-primary: 166 76% 32%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 14% 96%;
+  --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-ring: 166 76% 32%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Safe area insets para dispositivos con notch */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Dark Mode - Paleta Nelai */
+.dark {
+  --background: 222 47% 11%;
+  --foreground: 210 40% 98%;
+  --card: 222 33% 15%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222 33% 15%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 166 76% 45%;           /* Teal más claro en dark */
+  --primary-foreground: 222 47% 11%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217 20% 25%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 239 84% 67%;            /* Índigo */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217 30% 25%;
+  --input: 217 30% 25%;
+  --ring: 166 76% 45%;
+  --chart-1: 166 76% 45%;
+  --chart-2: 239 84% 67%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+  /* Sidebar variables para dark mode */
+  --sidebar: 222 33% 15%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-primary: 166 76% 45%;
+  --sidebar-primary-foreground: 222 47% 11%;
+  --sidebar-accent: 217 20% 25%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 217 30% 25%;
+  --sidebar-ring: 166 76% 45%;
+}
+
+/* Exponer variables a Tailwind CSS v4 */
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  /* Charts */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  /* Sidebar */
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+  /* Radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  
+  /* Mejoras de scroll para móvil */
+  html {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+  
+  /* Asegurar que el contenido no quede oculto detrás del BottomNav en móvil */
+  @media (max-width: 768px) {
+    body {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
+/* Estilos para Header con glass effect */
+.glass-header {
+  background-color: hsl(var(--background) / 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Estilos para Sheet con background sólido */
+.sheet-solid-bg {
+  background-color: hsl(var(--card)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Asegurar que los diálogos tengan fondo sólido y correcto */
+[data-radix-dialog-content] {
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+}
+
+[data-radix-dialog-overlay] {
+  background-color: rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+/* Asegurar que los mapas de Leaflet no estén por encima de otros elementos */
+.leaflet-container {
+  position: relative !important;
+  z-index: 0 !important;
+}
+
+.leaflet-control-container {
+  z-index: 1 !important;
+}
+
+.leaflet-popup {
+  z-index: 2 !important;
+}
+
+/* Asegurar que los dropdowns tengan fondo sólido */
+[data-radix-dropdown-menu-content] {
+  background-color: hsl(var(--popover)) !important;
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+/* Asegurar que los botones ghost tengan fondo visible */
+button[class*="bg-muted"],
+.theme-toggle-button {
+  background-color: hsl(var(--muted)) !important;
+}
+
+.theme-toggle-button:hover {
+  background-color: hsl(var(--muted) / 0.8) !important;
+}
+
+/* Asegurar que todos los elementos con bg-background tengan fondo sólido */
+.bg-background,
+[class*="bg-background"]:not([class*="/"]):not([class*="opacity"]) {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Asegurar que los headers sticky tengan fondo sólido */
+.sticky.bg-background,
+.sticky[class*="bg-background"]:not([class*="/"]) {
+  background-color: hsl(var(--background)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* FABs con colores sólidos y visibles siempre */
+.fab-emergency,
+.fab-navigation {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  /* Asegurar que no haya padding o margin que afecte la alineación */
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  /* Forzar que esté fuera del flujo y visible */
+  position: fixed !important;
+  z-index: 100 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  /* Asegurar que no esté oculto por overflow de contenedores padres */
+  contain: none !important;
+  isolation: isolate;
+}
+
+/* Ocultar FAB de navegación cuando el asistente de IA está abierto */
+body.agent-open .fab-navigation {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Estado dim para FABs cuando hay expansión */
+.fab-dim {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fab-dim-active {
+  opacity: 0.4;
+}
+
+.fab-dim-active:hover,
+.fab-dim-active:focus-within {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+/* Asegurar que los FABs sean visibles cuando se necesita interactuar */
+.fab-dim-active:active {
+  opacity: 1;
+}
+
+/* FAB de emergencia - Rojo sólido y visible (izquierda para usuarios diestros) */
+.fab-emergency button {
+  background-color: hsl(var(--destructive)) !important;
+  color: hsl(var(--destructive-foreground)) !important;
+  border: 2px solid hsl(var(--destructive) / 0.4) !important;
+  box-shadow: 
+    0 4px 14px 0 rgba(239, 68, 68, 0.4),
+    0 0 0 0 rgba(239, 68, 68, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* FAB alargado (wide) - Para emergencia (el doble de ancho) */
+.fab-wide button {
+  border-radius: 9999px !important; /* Mantener rounded-full */
+  min-width: 7rem !important; /* w-28 = 7rem (el doble de w-14) */
+  width: 7rem !important;
+}
+
+@media (min-width: 768px) {
+  .fab-wide button {
+    min-width: 8rem !important; /* w-32 = 8rem en desktop (el doble de w-16) */
+    width: 8rem !important;
+  }
+}
+
+.fab-emergency button:hover {
+  background-color: hsl(var(--destructive) / 0.95) !important;
+  box-shadow: 
+    0 6px 20px 0 rgba(239, 68, 68, 0.5),
+    0 0 0 4px rgba(239, 68, 68, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.fab-emergency button:active {
+  background-color: hsl(var(--destructive) / 0.9) !important;
+  transform: scale(0.95);
+}
+
+/* FAB de navegación - Azul sólido y visible (derecha) */
+.fab-navigation button {
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  border: 2px solid hsl(var(--primary) / 0.4) !important;
+  box-shadow: 
+    0 4px 14px 0 rgba(59, 130, 246, 0.4),
+    0 0 0 0 rgba(59, 130, 246, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+.fab-navigation button:hover {
+  background-color: hsl(var(--primary) / 0.95) !important;
+  box-shadow: 
+    0 6px 20px 0 rgba(59, 130, 246, 0.5),
+    0 0 0 4px rgba(59, 130, 246, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.fab-navigation button:active {
+  background-color: hsl(var(--primary) / 0.9) !important;
+  transform: scale(0.95);
+}
+
+/* Dark mode - Asegurar contraste en ambos modos */
+.dark .fab-emergency button {
+  background-color: hsl(var(--destructive)) !important;
+  border-color: hsl(var(--destructive) / 0.5) !important;
+  box-shadow: 
+    0 4px 14px 0 rgba(239, 68, 68, 0.5),
+    0 0 0 0 rgba(239, 68, 68, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark .fab-navigation button {
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary) / 0.5) !important;
+  box-shadow: 
+    0 4px 14px 0 rgba(59, 130, 246, 0.5),
+    0 0 0 0 rgba(59, 130, 246, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* FAB con variant outline - Para botones secundarios */
+.fab-navigation button[data-variant="outline"],
+.fab-navigation button.variant-outline {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 2px solid hsl(var(--primary) / 0.5) !important;
+  box-shadow: 
+    0 4px 14px 0 rgba(0, 0, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+.fab-navigation button[data-variant="outline"]:hover,
+.fab-navigation button.variant-outline:hover {
+  background-color: hsl(var(--muted)) !important;
+  border-color: hsl(var(--primary) / 0.7) !important;
+  box-shadow: 
+    0 6px 20px 0 rgba(0, 0, 0, 0.3),
+    0 4px 12px rgba(0, 0, 0, 0.2) !important;
+}
+
+.dark .fab-navigation button[data-variant="outline"],
+.dark .fab-navigation button.variant-outline {
+  background-color: hsl(var(--card)) !important;
+  border-color: hsl(var(--primary) / 0.6) !important;
+}
+
+/* Asegurar que todos los elementos con bg-background tengan fondo sólido */
+.bg-background:not([class*="/"]):not([class*="opacity"]) {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Asegurar que los headers sticky tengan fondo sólido */
+.sticky.bg-background,
+.sticky[class*="bg-background"]:not([class*="/"]) {
+  background-color: hsl(var(--background)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Asegurar que el footer del aviso de salida tenga fondo sólido */
+.aviso-salida-footer {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Asegurar que el contenedor del aviso de salida tenga fondo sólido */
+div.space-y-6.bg-background,
+div[class*="space-y-6"][class*="bg-background"] {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Asegurar que el footer del aviso de salida tenga fondo sólido */
+.aviso-salida-footer,
+div.aviso-salida-footer {
+  background-color: hsl(var(--background)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Forzar fondo sólido en ThemeToggle button */
+button.theme-toggle-button,
+button[class*="theme-toggle-button"] {
+  background-color: hsl(var(--muted)) !important;
+}
+
+button.theme-toggle-button:hover,
+button[class*="theme-toggle-button"]:hover {
+  background-color: hsl(var(--muted) / 0.8) !important;
+}
