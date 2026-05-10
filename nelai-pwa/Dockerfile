@@ -35,9 +35,10 @@ RUN corepack enable
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn/patches ./.yarn/patches
 
-# Railway exige `id=` en los mounts de cache de BuildKit; sin él el build falla.
-RUN --mount=type=cache,id=yarn-berry,target=/root/.yarn/berry/cache \
-    yarn install --immutable
+# Sin `--mount=type=cache`: Railway exige un prefijo `cacheKey` específico
+# del builder en el id del mount, incompatible con un Dockerfile portable.
+# Se acepta el coste extra de descargar el cache de yarn cada build.
+RUN yarn install --immutable
 
 ############################
 # Stage 2: build

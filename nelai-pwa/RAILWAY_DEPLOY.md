@@ -258,7 +258,7 @@ retornar 2xx salvo donde se indique.
 
 | Síntoma | Causa más probable | Acción |
 | --- | --- | --- |
-| Build `criteria-api`: `flag '--mount=type=cache' is missing an id argument` | BuildKit en Railway exige `id=` en cache mounts | Ya corregido en `nelai-pwa/Dockerfile` (`id=yarn-berry`); haz pull y redeploy. |
+| Build `criteria-api`: `--mount=type=cache ... missing the cacheKey prefix from its id` o `is missing an id argument` | El builder de Railway no acepta cache mounts portables (exige prefijo `s/<service-id>-…`) | Eliminados del Dockerfile: el build no usa cache mount. Tras pull, redeploy. |
 | Build `etherpad`: `"/entrypoint.sh": not found` | Root Directory mal: el contexto no incluye `entrypoint.sh` donde el Dockerfile lo espera | Usa **raíz del repo** + Dockerfile path `nelai-pwa/etherpad/Dockerfile` (ver §1.3). No uses solo `nelai-pwa/etherpad` salvo que adaptes el Dockerfile. |
 | 502 al cargar `/pad` | `ETHERPAD_INTERNAL_URL` mal o servicio etherpad caído | Revisa logs del servicio etherpad y la variable. |
 | Pads no sincronizan | `upgrade` no llega al proxy | Verifica `attachEtherpadWebSocketUpgrade` en logs y que `ws: true` esté en el middleware. |
