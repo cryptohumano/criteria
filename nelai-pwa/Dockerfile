@@ -31,9 +31,11 @@ RUN apt-get update \
 
 RUN corepack enable
 
-# Copiamos solo lo necesario para que `yarn install` sea cacheable.
-COPY package.json yarn.lock .yarnrc.yml ./
-COPY .yarn/patches ./.yarn/patches
+# Contexto de build = raíz del monorepo (Railway envía el repo completo cuando
+# Root Directory está vacío; en local: `docker build -f nelai-pwa/Dockerfile .`).
+# Copiamos solo el manifiesto de dependencias para que `yarn install` sea cacheable.
+COPY nelai-pwa/package.json nelai-pwa/yarn.lock nelai-pwa/.yarnrc.yml ./
+COPY nelai-pwa/.yarn/patches ./.yarn/patches
 
 # Sin `--mount=type=cache`: Railway exige un prefijo `cacheKey` específico
 # del builder en el id del mount, incompatible con un Dockerfile portable.
@@ -56,8 +58,8 @@ RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/.yarn ./.yarn
 
-# Código fuente del proyecto.
-COPY . .
+# Código fuente del paquete (solo nelai-pwa/, no el resto del monorepo).
+COPY nelai-pwa/ ./
 
 # Generar cliente Prisma antes de compilar (los imports de @prisma/client lo necesitan).
 RUN npx prisma generate

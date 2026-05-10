@@ -80,12 +80,17 @@ detalla los pasos manuales en Railway, Stripe, Google Cloud y MailerSend.
 
 1. **Add → GitHub Repo** (el mismo repo).
 2. **Settings → Source**:
-   - **Root Directory:** `nelai-pwa` (recomendado: el contexto de Docker coincide
-     con `COPY package.json`, `yarn.lock`, etc. del Dockerfile).
-   - **Dockerfile path:** `Dockerfile` (por defecto en esa carpeta).
-   - Si dejas la raíz del repo vacía, usa Dockerfile path `nelai-pwa/Dockerfile`
-     y tendrías que ajustar todas las rutas `COPY` del Dockerfile — **no** está
-     soportado en la imagen actual; mantén Root Directory `nelai-pwa`.
+   - **Root Directory: vacío** (raíz del repo, igual que `etherpad`).
+   - **Dockerfile path:** `nelai-pwa/Dockerfile`.
+   - El Dockerfile copia rutas con prefijo `nelai-pwa/` desde la raíz del
+     monorepo, así que ambos servicios comparten el mismo contexto y
+     `.dockerignore` raíz.
+3. **Settings → Deploy** (no se leen `railway.json` cuando Root Directory está
+   vacío y el archivo vive en `nelai-pwa/railway.json`; configura manualmente):
+   - **Custom Start Command:** `npx prisma migrate deploy && npx tsx server/c2pa-sign.ts`
+   - **Healthcheck Path:** `/api/c2pa-health`
+   - **Healthcheck Timeout:** 30
+   - **Restart Policy:** `On failure` con 5 reintentos.
 3. **Networking**: genera un dominio público (Railway-managed o custom). Lo
    referenciaremos como `${{RAILWAY_PUBLIC_DOMAIN}}`.
 4. **Variables** (ver sección [§2](#2-variables-de-entorno-de-criteria-api)).
@@ -260,6 +265,7 @@ retornar 2xx salvo donde se indique.
 | --- | --- | --- |
 | Build `criteria-api`: `--mount=type=cache ... missing the cacheKey prefix from its id` o `is missing an id argument` | El builder de Railway no acepta cache mounts portables (exige prefijo `s/<service-id>-…`) | Eliminados del Dockerfile: el build no usa cache mount. Tras pull, redeploy. |
 | Build `etherpad`: `"/entrypoint.sh": not found` | Root Directory mal: el contexto no incluye `entrypoint.sh` donde el Dockerfile lo espera | Usa **raíz del repo** + Dockerfile path `nelai-pwa/etherpad/Dockerfile` (ver §1.3). No uses solo `nelai-pwa/etherpad` salvo que adaptes el Dockerfile. |
+| Build `criteria-api`: `".yarn/patches": not found` o `"package.json": not found` | Root Directory vacío + Dockerfile que no usa prefijo `nelai-pwa/` | Asegura **Dockerfile path:** `nelai-pwa/Dockerfile`; el Dockerfile actual ya hace `COPY nelai-pwa/...`. |
 | 502 al cargar `/pad` | `ETHERPAD_INTERNAL_URL` mal o servicio etherpad caído | Revisa logs del servicio etherpad y la variable. |
 | Pads no sincronizan | `upgrade` no llega al proxy | Verifica `attachEtherpadWebSocketUpgrade` en logs y que `ws: true` esté en el middleware. |
 | Webhook Stripe falla | `STRIPE_WEBHOOK_SECRET` desactualizado tras recrear el endpoint | Copia el nuevo `whsec_...` y redeploya. |
