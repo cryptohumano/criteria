@@ -30,3 +30,10 @@ BEGIN
       FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
+
+-- Alineación con Prisma (TIMESTAMP(3)); antes vivía en una migración con timestamp anterior al CREATE.
+ALTER TABLE "email_verification_tokens" ALTER COLUMN "expires_at" SET DATA TYPE TIMESTAMP(3),
+ALTER COLUMN "created_at" SET DATA TYPE TIMESTAMP(3),
+ALTER COLUMN "used_at" SET DATA TYPE TIMESTAMP(3);
+
+ALTER TABLE "users" ALTER COLUMN "email_verified_at" SET DATA TYPE TIMESTAMP(3);
