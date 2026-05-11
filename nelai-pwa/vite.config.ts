@@ -210,7 +210,9 @@ export default defineConfig(({ mode, command }) => {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
         // En dev, base='/' y esto permite navegar/refrescar rutas SPA sin 404.
         navigateFallback: base === '/' ? '/index.html' : base + 'index.html',
-        navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/],
+        // Sin excluir /api/, el SW intercepta `window.location.href = /api/auth/google/start`
+        // y sirve index.html: React Router muestra 404 y OAuth nunca llega al servidor.
+        navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/, /^\/api\//],
         // Excluir servicios de mapas del procesamiento de Workbox completamente
         // Esto previene que Workbox intente procesar estas URLs
         navigateFallbackAllowlist: undefined,
