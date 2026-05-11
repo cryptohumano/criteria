@@ -118,9 +118,6 @@ export default defineConfig(({ mode, command }) => {
 
   return {
   base,
-  // Si algún plugin o el optimizador pide `index.html` vía grafo de módulos, sin esto
-  // `vite:import-analysis` intenta parsear el HTML como JS y falla (p. ej. junto a `</title>`).
-  assetsInclude: ['**/*.html'],
   server: {
     host: '0.0.0.0', // Permitir acceso desde la red local
     port: 5173,
