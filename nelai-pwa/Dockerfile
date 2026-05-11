@@ -71,9 +71,11 @@ RUN npx prisma generate
 # Build de la PWA. Forzamos `VITE_BASE_URL=/` para que los assets cuelguen de la raíz
 # (Railway sirve un único dominio para PWA + API). Las flags de "same-origin" hacen
 # que el cliente apunte a sus propios endpoints sin variables runtime.
+# `VITE_APP_MODE=saas` es build-time (Vite); sin esto la PWA compilada sería modo wallet.
 ENV VITE_BASE_URL=/ \
     VITE_API_USE_SAME_ORIGIN=true \
-    VITE_LLM_PROXY_USES_SERVER_KEY=true
+    VITE_LLM_PROXY_USES_SERVER_KEY=true \
+    VITE_APP_MODE=saas
 RUN yarn build
 
 ############################
