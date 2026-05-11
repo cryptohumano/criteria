@@ -566,11 +566,14 @@ mountEtherpadProxy(app)
 // Al recargar en rutas del cliente (p. ej. /platform), el navegador hace GET a esa ruta; hay que
 // devolver index.html para que React Router arranque. Requiere `yarn build` (existencia de dist/).
 if (fs.existsSync(INDEX_HTML)) {
-  // `redirect: false` evita 301 por “barra final” en directorios. Con algunos proxies
-  // (Cloudflare → Railway) `req.url`/`pathname` puede no coincidir con la URL del
-  // cliente y serve-static redirige a la misma URL → ERR_TOO_MANY_REDIRECTS.
-  app.use(express.static(DIST_DIR, { index: false, redirect: false }))
   const spaIndex = (_req: express.Request, res: express.Response) => res.sendFile(INDEX_HTML)
+  // `serve-static` mapea GET / a path "" y hace stat de la raíz de `dist/`: es un directorio
+  // y sin manejo explícito puede responder 301 a la misma URL (bucle con Cloudflare/Railway).
+  // Atender / y HEAD / antes del middleware estático evita ese stat.
+  app.get('/', spaIndex)
+  app.head('/', spaIndex)
+  // `redirect: false` evita otros 301 por barra final en subcarpetas bajo dist/.
+  app.use(express.static(DIST_DIR, { index: false, redirect: false }))
   // No capturar /api/* (Express 5: evitar patrón '*' en app.get).
   app.get(/^(?!\/api\/).*/, spaIndex)
   app.head(/^(?!\/api\/).*/, spaIndex)
