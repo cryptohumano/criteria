@@ -287,13 +287,48 @@ retornar 2xx salvo donde se indique.
 
 ## 7. Custom domain (opcional)
 
-Si mueves a `app.criteria.app`:
+Ejemplo: **`criteria.peranto.app`** apunta al único servicio público (`criteria-api`: PWA + API mismo origen).
 
-1. Railway → `criteria-api` → Settings → Domains → Add custom domain.
-2. Configura el CNAME que indique Railway en tu DNS.
-3. Actualiza:
-   - `AUTH_API_PUBLIC_URL`
-   - `AUTH_FRONTEND_ORIGIN`
-   - `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`
-   - `GOOGLE_OAUTH_REDIRECT_URI`
-4. Repite §3.1 (Stripe webhook con la nueva URL) y §3.2 (Google OAuth redirect).
+### 7.1 Railway
+
+1. Servicio **`criteria-api`** → **Settings → Networking → Public Networking → Custom Domain**.
+2. Añade **`criteria.peranto.app`** y confirma.
+3. Railway mostrará el registro DNS esperado (normalmente **CNAME** del host `criteria` hacia un target tipo `xxxx.up.railway.app` o lo que indique el panel). Espera a que el dominio quede **Active / Verified** (propagación DNS puede tardar minutos u horas).
+
+### 7.2 DNS en `peranto.app`
+
+En tu proveedor (Cloudflare, Route53, etc.), crea:
+
+| Tipo | Nombre / host | Valor / target |
+|------|----------------|----------------|
+| **CNAME** | `criteria` | El hostname que te dé Railway (sin `https://`) |
+
+No uses el dominio `.railway.internal` para el navegador; eso es solo red privada entre servicios.
+
+### 7.3 Variables en Railway (`criteria-api`)
+
+Sustituye cualquier URL antigua (`*.up.railway.app`) por **`https://criteria.peranto.app`** (sin barra final):
+
+- `AUTH_API_PUBLIC_URL`
+- `AUTH_FRONTEND_ORIGIN`
+- `CORS_ORIGIN` (recomendado igual que el origen público)
+- `GOOGLE_OAUTH_REDIRECT_URI` → `https://criteria.peranto.app/api/auth/google/callback`
+- `STRIPE_SUCCESS_URL` → `https://criteria.peranto.app/settings?billing=success`
+- `STRIPE_CANCEL_URL` → `https://criteria.peranto.app/settings?billing=cancel`
+- `STRIPE_PORTAL_RETURN_URL` → `https://criteria.peranto.app/settings`
+
+Guarda y **redeploy** el servicio para aplicar variables.
+
+### 7.4 Proveedores externos
+
+1. **Google Cloud** (OAuth): en el cliente OAuth, **Authorized redirect URIs** debe incluir exactamente  
+   `https://criteria.peranto.app/api/auth/google/callback`  
+   (y puedes dejar la URI antigua de Railway un tiempo hasta migrar del todo).
+2. **Stripe**: webhook §3.1 → endpoint  
+   `https://criteria.peranto.app/api/billing/webhook`  
+   Si creas un endpoint nuevo, copia el nuevo **`STRIPE_WEBHOOK_SECRET`** (`whsec_...`).
+3. **MailerSend**: si los enlaces de correo usan `AUTH_API_PUBLIC_URL`, con §7.3 bastará.
+
+### 7.5 Certificado HTTPS
+
+Railway gestiona TLS para el dominio personalizado una vez verificado el DNS; no necesitas subir cert manual en la app Node habitualmente.
