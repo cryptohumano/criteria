@@ -282,6 +282,7 @@ retornar 2xx salvo donde se indique.
 | PWA pide `/nelai/...` | build sin `VITE_BASE_URL=/` | El Dockerfile lo fuerza; si compilaste local, exporta la var antes de `yarn build`. |
 | Prisma migra al arrancar pero queda colgado | versión de engine vs OpenSSL | Imagen base `bookworm-slim` ya incluye `openssl`; comprueba que no la cambiaste a Alpine. |
 | Log: «Prisma schema loaded…» y luego error / deploy caído | Suele ser la **línea siguiente** del log (conexión, SSL o migración SQL). Si el fallo es SSL con Postgres gestionado, añade a `DATABASE_URL` `?sslmode=require` (o `&sslmode=require` si ya hay query). |
+| `datasource.url property is required` al arrancar (`migrate deploy`) | La imagen runtime debe incluir `prisma.config.ts` (donde está `DATABASE_URL` en Prisma 7). Además, en el servicio `criteria-api` define **`DATABASE_URL`** apuntando al Postgres (p. ej. `${{criteria-postgres.DATABASE_URL}}`). |
 | `migrate deploy` en BD nueva: error sobre `email_verification_tokens` inexistente | Orden de migraciones corregido en repo (ALTER fusionado en la migración que crea la tabla). Vuelve a desplegar con la última `main`. |
 
 ## 7. Custom domain (opcional)

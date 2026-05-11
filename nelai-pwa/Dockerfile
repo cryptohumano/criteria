@@ -100,6 +100,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
 COPY --from=build /app/prisma ./prisma
+# Prisma 7: la URL del datasource vive en prisma.config.ts (no en schema.prisma).
+# Sin este archivo, `migrate deploy` en runtime falla con "datasource.url property is required".
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/package.json ./package.json
 
