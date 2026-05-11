@@ -102,6 +102,14 @@ detalla los pasos manuales en Railway, Stripe, Google Cloud y MailerSend.
 
 ## 2. Variables de entorno de `criteria-api`
 
+### Qué **no** hace falta copiar del servicio Postgres
+
+El plugin PostgreSQL de Railway expone muchas variables (`PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGPORT`, `POSTGRES_*`, `DATABASE_PUBLIC_URL` para el proxy TCP externo, etc.). **En `criteria-api` no las pegues todas**: la app y Prisma en runtime solo usan **`DATABASE_URL`** (cadena completa). Referencia la del servicio de base de datos, por ejemplo:
+
+`DATABASE_URL=${{criteria-postgres.DATABASE_URL}}`
+
+(si el servicio de Postgres se llama distinto en tu proyecto, cambia el prefijo antes del punto). El `Dockerfile` ya define un `DATABASE_URL` ficticio **solo en la fase de build** para que `npx prisma generate` no falle cuando Railway aún no inyecta la URL real.
+
 Mínimas para arrancar:
 
 ```env

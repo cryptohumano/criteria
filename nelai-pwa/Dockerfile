@@ -61,6 +61,10 @@ COPY --from=deps /app/.yarn ./.yarn
 # Código fuente del paquete (solo nelai-pwa/, no el resto del monorepo).
 COPY nelai-pwa/ ./
 
+# `prisma.config.ts` exige `DATABASE_URL` al cargar el módulo; `prisma generate` no abre
+# conexión real. En Docker build (p. ej. Railway) esa variable no existe aún: placeholder.
+ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/_prisma_generate_only?schema=public"
+
 # Generar cliente Prisma antes de compilar (los imports de @prisma/client lo necesitan).
 RUN npx prisma generate
 
