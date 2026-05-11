@@ -278,6 +278,8 @@ retornar 2xx salvo donde se indique.
 | Pads no sincronizan | `upgrade` no llega al proxy | Verifica `attachEtherpadWebSocketUpgrade` en logs y que `ws: true` esté en el middleware. |
 | Webhook Stripe falla | `STRIPE_WEBHOOK_SECRET` desactualizado tras recrear el endpoint | Copia el nuevo `whsec_...` y redeploya. |
 | Login Google: `redirect_uri_mismatch` | URI no autorizado | Añade exactamente `https://<dominio>/api/auth/google/callback` en Google Console. |
+| Google OAuth o **enlace del correo de verificación** abre la app y sale **404** (React Router) | El Service Worker (PWA) servía `index.html` para navegaciones a `/api/...` | Despliega el build que excluye `/api/` del `navigateFallback` de Workbox (`vite.config.ts`). Luego borra datos del sitio o anula el SW en DevTools y recarga. |
+| Enlace del correo apunta a `http://127.0.0.1:3456/...` | Falta URL pública en el servidor | Define `AUTH_API_PUBLIC_URL=https://<tu-dominio>` (o solo `AUTH_FRONTEND_ORIGIN` si PWA y API comparten el mismo origen; el API deduce la base para el correo). |
 | Rate limits bloquean a todos | falta `app.set('trust proxy', 1)` | Ya está aplicado; si lo cambiaste, restaura. |
 | PWA pide `/nelai/...` | build sin `VITE_BASE_URL=/` | El Dockerfile lo fuerza; si compilaste local, exporta la var antes de `yarn build`. |
 | Prisma migra al arrancar pero queda colgado | versión de engine vs OpenSSL | Imagen base `bookworm-slim` ya incluye `openssl`; comprueba que no la cambiaste a Alpine. |
@@ -327,7 +329,7 @@ Guarda y **redeploy** el servicio para aplicar variables.
 2. **Stripe**: webhook §3.1 → endpoint  
    `https://criteria.peranto.app/api/billing/webhook`  
    Si creas un endpoint nuevo, copia el nuevo **`STRIPE_WEBHOOK_SECRET`** (`whsec_...`).
-3. **MailerSend**: si los enlaces de correo usan `AUTH_API_PUBLIC_URL`, con §7.3 bastará.
+3. **MailerSend**: los enlaces de verificación usan `AUTH_API_PUBLIC_URL` o, si falta, `AUTH_FRONTEND_ORIGIN` (mismo origen). Alinea ambas con §7.3.
 
 ### 7.5 Certificado HTTPS
 
