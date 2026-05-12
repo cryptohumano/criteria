@@ -116,8 +116,14 @@ export default defineConfig(({ mode, command }) => {
     console.log('[Vite Config] Base path "/" (raíz). OK para Railway / hosting propio. Para GitHub Pages necesitas VITE_BASE_URL=/<repo>/ o GITHUB_REPOSITORY.')
   }
 
+  // Solo en `vite serve`: evita que `vite:import-analysis` intente parsear `index.html` como JS
+  // (error junto a `</title>`). En `vite build` NO usar `**/*.html` aquí: Vite emitiría
+  // `dist/index.html` como stub `export default "…/assets/index-….html"` y rompería producción.
+  const devOnlyAssetsInclude = isDevServer ? (['**/*.html'] as const) : undefined
+
   return {
   base,
+  ...(devOnlyAssetsInclude ? { assetsInclude: [...devOnlyAssetsInclude] } : {}),
   server: {
     host: '0.0.0.0', // Permitir acceso desde la red local
     port: 5173,
