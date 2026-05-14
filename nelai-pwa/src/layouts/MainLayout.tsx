@@ -454,11 +454,17 @@ export default function MainLayout() {
     <AuthGuard>
       <SidebarProvider open={sidebarOpen} onOpenChange={onSidebarOpenChange}>
         {isDocumentEditor ? (
-          <SidebarInset className="flex flex-1 flex-col !pl-0 md:!pl-0">
-            <div className={cn(mainInnerClass, 'flex-1 min-h-0')} style={mainInnerStyle}>
-              <Outlet />
-            </div>
-          </SidebarInset>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+            <AppSidebar {...helpHeaderProps} />
+            <SidebarInset
+              id="shell-document-editor-main"
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
+            >
+              <div className={cn(mainInnerClass, 'flex min-h-0 min-w-0 flex-1')} style={mainInnerStyle}>
+                <Outlet />
+              </div>
+            </SidebarInset>
+          </div>
         ) : (
           <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
             <AppSidebar {...helpHeaderProps} />

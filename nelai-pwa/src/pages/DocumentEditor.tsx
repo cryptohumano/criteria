@@ -70,6 +70,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useDocumentEditorLayout } from '@/contexts/DocumentEditorLayoutContext'
 import { QuickIdentitySetupDialog } from '@/components/workspace/QuickIdentitySetupDialog'
 import { SpotlightTour } from '@/components/help/SpotlightTour'
+import { useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { quillRichTextDebug } from '@/lib/quillRichTextDebug'
 import type { PiiMatch } from '@/services/privacy/piiTypes'
@@ -152,6 +153,7 @@ export default function DocumentEditor() {
   const { accounts, isUnlocked, hasStoredAccounts, isReady } = useKeyringContext()
   const { activeAccount } = useActiveAccount()
   const layoutCtx = useDocumentEditorLayout()
+  const { toggleSidebar } = useSidebar()
 
   const entryIntentInitial = useMemo(() => {
     if (documentId) return null
@@ -1007,6 +1009,13 @@ export default function DocumentEditor() {
         selector: '[data-tour-id="tour-quill-history"]',
       },
       {
+        id: 'q-sources-log',
+        title: 'Bitácora de fuentes',
+        body:
+          'Registro de URLs que van quedando desde el chat del agente (mensajes, citas web). Se guarda con el documento; puedes revisarla, comentar entradas y exportar JSON o CSV para trazabilidad.',
+        selector: '[data-tour-id="tour-quill-sources-log"]',
+      },
+      {
         id: 'q-diff',
         title: 'Cambios en vivo',
         body:
@@ -1097,17 +1106,11 @@ export default function DocumentEditor() {
   }
 
   const headerCollapsed = layoutCtx?.headerCollapsed ?? false
-  const sidebarOpen = layoutCtx?.sidebarOpen ?? false
 
   return (
     <>
       <QuickIdentitySetupDialog open={needsIdentityGate} />
-    <div
-      className={cn(
-        'fixed top-0 bottom-0 z-10 flex flex-col bg-background left-0 right-0',
-        sidebarOpen && 'md:left-64'
-      )}
-    >
+    <div className="flex h-full min-h-0 w-full flex-col bg-background">
       {/* Barra de opciones del documento */}
       <div
         className={`flex items-center gap-1 sm:gap-2 border-b shrink-0 transition-all ${
@@ -1117,7 +1120,7 @@ export default function DocumentEditor() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => layoutCtx?.toggleSidebar()}
+          onClick={() => toggleSidebar()}
           className="flex-shrink-0 h-8 w-8"
           title="Mostrar menú"
           data-tour-id="tour-quill-menu"
@@ -1202,6 +1205,7 @@ export default function DocumentEditor() {
               onClick={() => setSourcesModalOpen(true)}
               className="flex-shrink-0 h-8 w-8"
               title="Bitácora de fuentes (URLs del agente)"
+              data-tour-id="tour-quill-sources-log"
             >
               <BookMarked className="h-4 w-4" />
             </Button>

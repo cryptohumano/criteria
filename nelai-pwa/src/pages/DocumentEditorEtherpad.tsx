@@ -52,6 +52,7 @@ import { useKeyringContext } from '@/contexts/KeyringContext'
 import { useDocumentEditorLayout } from '@/contexts/DocumentEditorLayoutContext'
 import { QuickIdentitySetupDialog } from '@/components/workspace/QuickIdentitySetupDialog'
 import { useActiveAccount } from '@/contexts/ActiveAccountContext'
+import { useSidebar } from '@/components/ui/sidebar'
 import { anonymizeDocAndMessage, anonymizeWithMatches } from '@/services/privacy/piiAnonymize'
 import { detectPiiOutsideCriteriaBrackets } from '@/services/privacy/criteriaPlaceholders'
 import type { PiiReviewRow } from '@/services/privacy/piiTypes'
@@ -149,6 +150,7 @@ export default function DocumentEditorEtherpad() {
   const navigate = useNavigate()
   const { accounts, isReady, hasStoredAccounts, isUnlocked } = useKeyringContext()
   const layoutCtx = useDocumentEditorLayout()
+  const { toggleSidebar } = useSidebar()
   const { activeAccount } = useActiveAccount()
 
   const [title, setTitle] = useState('')
@@ -1177,7 +1179,7 @@ export default function DocumentEditorEtherpad() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => layoutCtx?.toggleSidebar()}
+            onClick={() => toggleSidebar()}
             className="flex-shrink-0"
             aria-label="Menú de navegación"
             title="Menú"
