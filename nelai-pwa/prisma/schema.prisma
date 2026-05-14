@@ -57,8 +57,26 @@ model Organization {
   users     User[]
   apiKeys   ApiKey[]
   usageEvents UsageEvent[]
+  invites     OrganizationInvite[]
 
   @@map("organizations")
+}
+
+/// Invitación de un solo uso para unirse a una organización tipo equipo (registro con `inviteToken`).
+model OrganizationInvite {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tokenHash        String   @unique @map("token_hash")
+  orgRole          OrgMemberRole @default(member) @map("org_role")
+  invitedByUserId  String   @map("invited_by_user_id")
+  invitedBy        User     @relation("InviteCreatedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  expiresAt        DateTime @map("expires_at")
+  usedAt           DateTime? @map("used_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId])
+  @@map("organization_invites")
 }
 
 /// Usuario (email/contraseña y/o Google OAuth).
@@ -81,6 +99,7 @@ model User {
   sessions      Session[]
   usageEvents   UsageEvent[]
   emailVerificationTokens EmailVerificationToken[]
+  invitesCreated          OrganizationInvite[] @relation("InviteCreatedBy")
 
   @@index([organizationId])
   @@map("users")

@@ -22,6 +22,8 @@ export type LlmUsageResponse = {
   monthlyTokenLimit: number
   /** 0 = sin tope según catálogo de planes. */
   maxUsersPerOrg?: number
+  /** Miembros actuales en la organización (asientos ocupados). */
+  memberCount?: number
   quotaEnforced: boolean
   unlimited: boolean
   noDatabase: boolean

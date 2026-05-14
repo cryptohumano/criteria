@@ -45,7 +45,7 @@ export function HelpCenterDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   initialTutorialId?: string | null
-  onReplaySpotlight?: () => void
+  onReplaySpotlight?: (tutorialId?: string | null) => void
 }) {
   const [tutorials, setTutorials] = useState<TutorialItem[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
@@ -134,8 +134,8 @@ export function HelpCenterDialog({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    onClick={() => onReplaySpotlight?.()}
-                    title="Reproducir tutorial guiado"
+                    onClick={() => onReplaySpotlight?.(selectedId || null)}
+                    title="Reproducir tutorial guiado (según el tutorial seleccionado)"
                   >
                     Reproducir tutorial
                   </Button>
@@ -172,9 +172,22 @@ export function HelpCenterDialog({
           </TabsContent>
 
           <TabsContent value="faq" className="mt-4">
-            <div className="rounded-lg border p-4 text-sm text-muted-foreground">
-              Por ahora, revisa el tutorial “Wallet local (Substrate) — por qué existe y por qué se bloquea”.
-              Aquí podemos ir agregando preguntas frecuentes según soporte.
+            <div className="rounded-lg border p-4 space-y-3 text-sm text-muted-foreground">
+              <p>
+                En <strong className="text-foreground">Tutoriales</strong> tienes guías alineadas con los recorridos
+                guiados (spotlight): inicio y listado de <strong className="text-foreground">documentos</strong>,
+                editor <strong className="text-foreground">Etherpad</strong>, wallet local, PII, perfiles del agente,
+                etc.
+              </p>
+              <p>
+                El botón <strong className="text-foreground">Reproducir tutorial</strong> lanza el recorrido guiado
+                (spotlight) del tutorial seleccionado: <strong className="text-foreground">wallet</strong>{' '}
+                (00), <strong className="text-foreground">documentos al iniciar</strong> (06),{' '}
+                <strong className="text-foreground">editor Etherpad</strong> (07) o{' '}
+                <strong className="text-foreground">editor Quill</strong> (08). Los demás apartados son guía escrita
+                solamente.
+              </p>
+              <p>Aquí podemos ir agregando preguntas frecuentes según soporte.</p>
             </div>
           </TabsContent>
         </Tabs>

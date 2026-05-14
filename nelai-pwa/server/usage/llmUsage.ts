@@ -130,6 +130,8 @@ export type LlmUsageForSession = {
   monthlyTokenLimit: number
   /** 0 = sin tope de usuarios según catálogo. */
   maxUsersPerOrg: number
+  /** Usuarios actuales en la organización (asientos ocupados). */
+  memberCount: number
   quotaEnforced: boolean
   unlimited: boolean
   /** true si el servidor no tiene `DATABASE_URL` (memoria / demo). */
@@ -150,6 +152,9 @@ export async function getLlmUsageForSession(
   const ent = getPlanEntitlements(session.plan)
   const used =
     prisma ? await sumOrgLlmTokensThisMonth(prisma, session.organizationId, session.plan) : 0
+  const memberCount = prisma
+    ? await prisma.user.count({ where: { organizationId: session.organizationId } })
+    : 0
   return {
     periodStart: from.toISOString(),
     periodEnd: resolved.end ? resolved.end.toISOString() : null,
@@ -161,6 +166,7 @@ export async function getLlmUsageForSession(
     usedTokensThisMonth: used,
     monthlyTokenLimit,
     maxUsersPerOrg: ent.maxUsersPerOrg,
+    memberCount,
     quotaEnforced: isLlmQuotaEnforced(),
     unlimited: monthlyTokenLimit === 0,
     noDatabase: !prisma,

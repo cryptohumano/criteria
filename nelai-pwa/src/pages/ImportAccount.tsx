@@ -249,9 +249,9 @@ export default function ImportAccount() {
                 password.trim() || undefined
               )
             } else {
-              // Verificar si podría ser un backup completo de Nelai
+              // Verificar si podría ser un backup completo de criterIA (nombre anterior del producto)
               if (parsed.version || (parsed.accounts && Array.isArray(parsed.accounts))) {
-                setError('Este parece ser un archivo de backup completo de Nelai. Por favor, usa la opción "Importar Backup Completo" desde la pantalla de inicio o desde Configuración > Seguridad > Backup e Importación.')
+                setError('Este parece ser un archivo de backup completo de criterIA. Por favor, usa la opción "Importar Backup Completo" desde la pantalla de inicio o desde Configuración > Seguridad > Backup e Importación.')
               } else {
                 setError('El JSON debe ser un archivo de Polkadot.js (con address y encoded) o contener "mnemonic", "uri" o "seed"')
               }

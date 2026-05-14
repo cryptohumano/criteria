@@ -145,7 +145,9 @@ const SidebarProvider = React.forwardRef<
               } as React.CSSProperties
             }
             className={cn(
-              "group/sidebar-wrapper flex min-h-svh w-full min-w-0 flex-row has-[[data-variant=inset]]:bg-sidebar",
+              // Altura acotada al viewport: sin esto el flex crece con el contenido, hace scroll el `body`
+              // y el header (z menor que el rail) parece “flotar” encima del sidebar o desplazarse todo junto.
+              "group/sidebar-wrapper flex h-svh min-h-0 w-full min-w-0 flex-row overflow-hidden has-[[data-variant=inset]]:bg-sidebar",
               className
             )}
             ref={ref}
@@ -185,7 +187,7 @@ const Sidebar = React.forwardRef<
       return (
         <div
           className={cn(
-            "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+            "flex h-full w-[var(--sidebar-width)] flex-col bg-sidebar text-sidebar-foreground",
             className
           )}
           ref={ref}
@@ -202,7 +204,7 @@ const Sidebar = React.forwardRef<
           <SheetContent
             data-sidebar="sidebar"
             data-mobile="true"
-            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            className="w-[var(--sidebar-width)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -233,14 +235,14 @@ const Sidebar = React.forwardRef<
         <div className="w-0" />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] duration-200 ease-linear md:flex",
+            "fixed inset-y-0 z-30 hidden h-svh w-[var(--sidebar-width)] transition-[left,right,width] duration-200 ease-linear md:flex",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
             // Adjust the padding for floating and inset variants.
             variant === "floating" || variant === "inset"
               ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]"
-              : "group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l",
+              : "group-data-[collapsible=icon]:w-[var(--sidebar-width-icon)] group-data-[side=left]:border-r group-data-[side=right]:border-l",
             className
           )}
           {...props}
@@ -299,7 +301,8 @@ const SidebarRail = React.forwardRef<
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
+        // z moderado: si z-40 queda por encima del header, el rail “roba” clics al `SidebarTrigger` del área principal.
+        "absolute inset-y-0 z-[22] hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
         "[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
         "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-sidebar",
@@ -316,16 +319,29 @@ SidebarRail.displayName = "SidebarRail"
 const SidebarInset = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"main">
->(({ className, ...props }, ref) => {
+>(({ className, style, ...props }, ref) => {
+  // Desplazamiento explícito: el panel `Sidebar` es `position: fixed` y no empuja el flujo flex.
+  // `padding-left` en línea (con fallback en `var()`) evita depender de que Tailwind emita `pl-[…]` y
+  // de que reglas globales / orden de capas lo dejen sin efecto (p. ej. otro perfil de Chrome).
+  const { isMobile, open } = useSidebar()
+  const insetPad =
+    !isMobile && open
+      ? `var(--sidebar-width, ${SIDEBAR_WIDTH})`
+      : !isMobile && !open
+        ? `var(--sidebar-width-icon, ${SIDEBAR_WIDTH_ICON})`
+        : undefined
+
   return (
     <main
       ref={ref}
+      {...props}
+      data-sidebar="inset"
+      style={{
+        ...(typeof style === 'object' && style !== null ? style : {}),
+        ...(insetPad ? { paddingLeft: insetPad } : {}),
+      }}
       className={cn(
-        // min-w-0 + flex-1: el área principal ocupa solo el espacio a la derecha del spacer del sidebar;
-        // `w-full` aquí hace que el inset sea 100% del padre y quede por debajo del sidebar fijo (z-10).
-        "relative flex min-h-svh min-w-0 flex-1 flex-col bg-background overflow-x-hidden",
-        // Empujar el contenido según estado del sidebar (robusto incluso si el spacer colapsa).
-        "md:peer-data-[state=expanded]:pl-[--sidebar-width] md:peer-data-[state=collapsed]:pl-[--sidebar-width-icon]",
+        "relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background",
         // En `variant=inset` el contenedor del sidebar agrega padding (p-2) + borde: el ancho efectivo que “ocupa”
         // es mayor al width base. Sin esto, el header/trigger y el contenido quedan parcialmente debajo del sidebar.
         "md:peer-data-[state=expanded]:peer-data-[variant=inset]:pl-[calc(var(--sidebar-width)_+_theme(spacing.4)_+2px)]",
@@ -335,7 +351,6 @@ const SidebarInset = React.forwardRef<
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow",
         className
       )}
-      {...props}
     />
   )
 })

@@ -15,7 +15,7 @@ export interface GPSPoint extends GPSMetadata {
   timestamp: number // Timestamp del punto
 }
 
-/** Metadata firmada por Nelai (evidencia genérica); mapeable a C2PA + assertion org.nelai.polkadot */
+/** Metadata firmada por criterIA (evidencia genérica); mapeable a C2PA + assertion org.nelai.polkadot (legacy) */
 export interface SignedEvidenceMetadata {
   metadata: Record<string, unknown> // Metadata canónica (version, type, contentHash, createdAt, author, ...)
   signature: string // Firma hex (Polkadot)
@@ -46,7 +46,7 @@ export interface MountainLogImage {
   tags?: string[] // Etiquetas para búsqueda
   /** Hash SHA-256 del contenido (hex); para verificación de integridad */
   contentHash?: string
-  /** Firma criptográfica de la metadata (Nelai); capa genérica de procedencia */
+  /** Firma criptográfica de la metadata (criterIA); capa genérica de procedencia */
   signedMetadata?: SignedEvidenceMetadata
   /** UAL del Knowledge Asset en DKG (OriginTrail); si está presente, la evidencia fue publicada */
   dkgUAL?: string
@@ -63,7 +63,7 @@ export interface MountainLogFile {
   tags?: string[] // Etiquetas para búsqueda
   /** Hash SHA-256 del contenido (hex); para verificación de integridad */
   contentHash?: string
-  /** Firma criptográfica de la metadata (Nelai); capa genérica de procedencia */
+  /** Firma criptográfica de la metadata (criterIA); capa genérica de procedencia */
   signedMetadata?: SignedEvidenceMetadata
   /** UAL del Knowledge Asset en DKG (OriginTrail); si está presente, la evidencia fue publicada */
   dkgUAL?: string

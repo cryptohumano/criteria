@@ -5,6 +5,7 @@ import { Progress } from '@/components/ui/progress'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { hasWorkspaceApiBase } from '@/config/saasConfig'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { fetchLlmUsage, type LlmUsageResponse } from '@/services/workspace/usageApi'
 
 function formatTokens(n: number): string {
@@ -17,6 +18,8 @@ function formatTokens(n: number): string {
  * Muestra consumo de tokens de IA del mes (proxy con clave de plataforma), si hay backend SaaS.
  */
 export function LlmUsageCard() {
+  const { session } = useWorkspaceSession()
+  const planKey = session?.organization?.plan ?? ''
   const [data, setData] = useState<LlmUsageResponse | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -28,6 +31,8 @@ export function LlmUsageCard() {
     }
     let cancel = false
     ;(async () => {
+      setLoading(true)
+      setErr(null)
       try {
         const d = await fetchLlmUsage()
         if (!cancel) setData(d)
@@ -40,7 +45,7 @@ export function LlmUsageCard() {
     return () => {
       cancel = true
     }
-  }, [])
+  }, [planKey])
 
   if (!isSaaSWorkspaceMode() || !hasWorkspaceApiBase()) {
     return null

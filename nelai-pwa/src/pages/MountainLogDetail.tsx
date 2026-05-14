@@ -793,7 +793,7 @@ export default function MountainLogDetail() {
             }
           }
 
-          // Firma Nelai: procedencia y autenticidad (genérico)
+          // Firma criterIA: procedencia y autenticidad (genérico)
           const authorAddress = currentLog.relatedAccount || activeAccount || accounts[0]?.address
           const account = authorAddress ? getAccount(authorAddress) : undefined
           if (account?.pair) {
@@ -813,7 +813,7 @@ export default function MountainLogDetail() {
               image.contentHash = result.contentHash
               image.signedMetadata = result.signedMetadata
             } catch (err) {
-              console.warn('[processImageFromBase64] Firma Nelai omitida:', err)
+              console.warn('[processImageFromBase64] Firma criterIA omitida:', err)
             }
           }
 
@@ -1138,7 +1138,7 @@ export default function MountainLogDetail() {
                 }
               }
 
-              // Firma Nelai: procedencia y autenticidad (genérico)
+              // Firma criterIA: procedencia y autenticidad (genérico)
               const authorAddress = currentLog.relatedAccount || activeAccount || accounts[0]?.address
               const account = authorAddress ? getAccount(authorAddress) : undefined
               if (account?.pair) {
@@ -1158,7 +1158,7 @@ export default function MountainLogDetail() {
                   image.contentHash = result.contentHash
                   image.signedMetadata = result.signedMetadata
                 } catch (err) {
-                  console.warn('[handleImageFile] Firma Nelai omitida:', err)
+                  console.warn('[handleImageFile] Firma criterIA omitida:', err)
                 }
               }
 

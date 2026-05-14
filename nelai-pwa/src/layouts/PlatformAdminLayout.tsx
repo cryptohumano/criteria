@@ -1,5 +1,5 @@
 import { Link, Outlet, Navigate, useLocation } from 'react-router-dom'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'

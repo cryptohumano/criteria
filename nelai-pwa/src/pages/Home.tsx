@@ -17,10 +17,10 @@ function WalletModeHomeDashboard() {
   const { activeEmergencies, isLoading: isLoadingEmergencies } = useActiveEmergencies()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 xl:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Inicio</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
+        <h1 className="text-2xl font-bold tracking-tight xl:text-3xl">Inicio</h1>
+        <p className="mt-1 text-sm text-muted-foreground xl:text-base">
           Documentos y wallet Polkadot / Substrate.
         </p>
       </div>

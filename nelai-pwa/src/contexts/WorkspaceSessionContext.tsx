@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { WorkspaceSession } from '@/types/workspace'
 import {
   clearWorkspaceSession,
@@ -18,25 +10,9 @@ import {
   loginWithPassword,
   registerWorkspace,
   type RegisterWorkspaceInput,
-  type RegisterWorkspaceResult,
 } from '@/services/workspace/workspaceAuthApi'
 import { ensureSaaSPlatformGeminiConfig } from '@/config/saasDefaultLlm'
-
-interface WorkspaceSessionContextValue {
-  session: WorkspaceSession | null
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (input: RegisterWorkspaceInput) => Promise<RegisterWorkspaceResult>
-  /** Persiste sesión tras OAuth Google (redirect) sin recargar la página. */
-  applySession: (next: WorkspaceSession) => void
-  signOut: () => void
-  isHydrated: boolean
-  /** `true` tras revalidar (o omitir) contra `/api/auth/me` con `VITE_API_BASE_URL`. Evita leer un `platformRole` obsoleto. */
-  isSessionSynced: boolean
-}
-
-const WorkspaceSessionContext = createContext<WorkspaceSessionContextValue | undefined>(
-  undefined
-)
+import { WorkspaceSessionContext } from '@/contexts/workspaceSessionContext'
 
 export function WorkspaceSessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<WorkspaceSession | null>(null)
@@ -51,27 +27,38 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   useEffect(() => {
     if (!isHydrated) return
     let cancelled = false
+    /** Si el API no responde (proxy colgado, backend caído), no bloquear la app indefinidamente. */
+    const safetyMs = 15_000
+    const safety = globalThis.setTimeout(() => {
+      if (!cancelled) setIsSessionSynced(true)
+    }, safetyMs)
+
     ;(async () => {
       try {
         const next = await refreshSessionFromServer()
         if (!cancelled) setSession(next)
+      } catch {
+        /* refreshSessionFromServer ya tolera red; por si cambia el contrato */
       } finally {
+        globalThis.clearTimeout(safety)
         if (!cancelled) setIsSessionSynced(true)
       }
     })()
+
     return () => {
       cancelled = true
+      globalThis.clearTimeout(safety)
     }
   }, [isHydrated])
 
-  /** Perfil local «Nelai (plataforma)» para IA sin BYOK (proxy + sesión). */
+  /** Perfil local «criterIA (plataforma)» para IA sin BYOK (proxy + sesión). */
   useEffect(() => {
     if (!isHydrated) return
     void ensureSaaSPlatformGeminiConfig()
   }, [isHydrated, session?.accessToken])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const next = await loginWithPassword(email, password)
+  const signIn = useCallback(async (email: string, password: string, opts?: { inviteToken?: string }) => {
+    const next = await loginWithPassword(email, password, opts)
     writeWorkspaceSession(next)
     setSession(next)
   }, [])
@@ -104,12 +91,4 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   return (
     <WorkspaceSessionContext.Provider value={value}>{children}</WorkspaceSessionContext.Provider>
   )
-}
-
-export function useWorkspaceSession() {
-  const ctx = useContext(WorkspaceSessionContext)
-  if (!ctx) {
-    throw new Error('useWorkspaceSession debe usarse dentro de WorkspaceSessionProvider')
-  }
-  return ctx
 }

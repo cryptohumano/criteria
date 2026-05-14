@@ -194,7 +194,7 @@ export async function signDocumentWithSubstrate(
       signature: signatureHex,
       certificateInfo: {
         subject: `CN=Substrate Account, O=${pair.address}, OU=${pair.type}`,
-        issuer: 'Nelai',
+        issuer: 'criterIA',
         validFrom: new Date().toISOString(),
         validTo: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 año
       },

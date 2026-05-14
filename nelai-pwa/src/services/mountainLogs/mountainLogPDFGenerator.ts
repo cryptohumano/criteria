@@ -40,7 +40,7 @@ export async function generateMountainLogPDF(
   // Configurar metadata del PDF
   pdf.setProperties({
     title: log.title || 'Bitácora de Montañismo',
-    author: authorName || log.relatedAccount || 'Nelai',
+    author: authorName || log.relatedAccount || 'criterIA',
     subject: 'Bitácora de Montañismo',
     keywords: ['montañismo', 'bitácora', 'expedición', log.mountainName || '', log.location || ''].filter(Boolean).join(', '),
     creator: 'CriterIA',
@@ -713,7 +713,7 @@ export async function generateMountainLogPDF(
     pdf.setFontSize(8)
     pdf.setFont('helvetica', 'italic')
     pdf.text(
-      `Generado el ${new Date().toLocaleDateString('es-ES')} por Nelai - Página ${i} de ${pageCount}`,
+      `Generado el ${new Date().toLocaleDateString('es-ES')} por criterIA - Página ${i} de ${pageCount}`,
       pageWidth / 2,
       pageHeight - 10,
       { align: 'center' }
@@ -728,7 +728,7 @@ export async function generateMountainLogPDF(
   
   // Establecer metadatos usando pdf-lib (esto asegura que se guarden correctamente)
   pdfDoc.setTitle(log.title || 'Bitácora de Montañismo')
-  pdfDoc.setAuthor(authorName || log.relatedAccount || 'Nelai')
+  pdfDoc.setAuthor(authorName || log.relatedAccount || 'criterIA')
   
   // Agregar información de la cuenta Substrate en el Subject (para metadatos X.509)
   const subjectParts = ['Bitácora de Montañismo']
@@ -751,7 +751,7 @@ export async function generateMountainLogPDF(
   }
   pdfDoc.setSubject(subjectStr)
   
-  pdfDoc.setCreator('Nelai')
+  pdfDoc.setCreator('criterIA')
   pdfDoc.setProducer('CriterIA PDF')
   
   // Agregar keywords incluyendo información de la cuenta Substrate y EXIF/cámara

@@ -30,6 +30,7 @@ import {
   Copy,
   Menu,
   Save,
+  BookMarked,
   User,
   Loader2,
   ChevronDown,
@@ -49,6 +50,7 @@ import {
 } from '@/services/etherpad/padsApi'
 import { useKeyringContext } from '@/contexts/KeyringContext'
 import { useDocumentEditorLayout } from '@/contexts/DocumentEditorLayoutContext'
+import { QuickIdentitySetupDialog } from '@/components/workspace/QuickIdentitySetupDialog'
 import { useActiveAccount } from '@/contexts/ActiveAccountContext'
 import { anonymizeDocAndMessage, anonymizeWithMatches } from '@/services/privacy/piiAnonymize'
 import { detectPiiOutsideCriteriaBrackets } from '@/services/privacy/criteriaPlaceholders'
@@ -64,13 +66,49 @@ import {
   withAgentProfileTag,
 } from '@/services/criteria/systemPrompts'
 import { getDocument, updateDocument } from '@/utils/documentStorage'
+import {
+  appendResearchEvidenceEntries,
+  buildResearchEvidenceEntries,
+  buildResearchEvidenceEntriesFromRefs,
+  collectAssistantSourceRefs,
+  downloadResearchEvidenceCsv,
+  downloadResearchEvidenceJson,
+  extractHttpUrlsFromText,
+  normalizeResearchEvidenceLog,
+} from '@/utils/researchEvidenceLog'
+import type { ResearchEvidenceLogEntry } from '@/types/documents'
 import { criteriaDomainFromAgentProfile, documentEditorPath } from '@/utils/documentListing'
 import { documentScoreUiLabels, stripAndParseDocumentScore } from '@/utils/agentDocumentScore'
 import { showEtherpadDevControls } from '@/config/etherpadUi'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { SpotlightTour } from '@/components/help/SpotlightTour'
+import { ResearchEvidenceLogTable } from '@/components/documents/ResearchEvidenceLogTable'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 /** Tras abrir un documento, el aviso de acceso al pad se oculta solo (y se puede cerrar antes). */
 const ETHERPAD_PAD_ACCESS_NOTICE_MS = 14_000
+
+function mapEtherpadAgentMessagesToChatHistory(
+  messages: Array<{
+    role: 'user' | 'assistant'
+    content: string
+    createdAt: number
+    documentScore?: { score: number; level: string; summary: string; risks: string[] } | null
+  }>,
+) {
+  return messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    timestamp: m.createdAt,
+    ...(m.documentScore ? { documentScore: m.documentScore } : {}),
+  }))
+}
 
 function normalizeTextForPii(input: string): string {
   // Etherpad / copy-paste puede introducir NBSP o zero-width.
@@ -109,7 +147,7 @@ function findLoose(haystack: string, needle: string): { index: number; length: n
 export default function DocumentEditorEtherpad() {
   const { documentId } = useParams<{ documentId: string }>()
   const navigate = useNavigate()
-  const { accounts } = useKeyringContext()
+  const { accounts, isReady, hasStoredAccounts, isUnlocked } = useKeyringContext()
   const layoutCtx = useDocumentEditorLayout()
   const { activeAccount } = useActiveAccount()
 
@@ -157,6 +195,9 @@ export default function DocumentEditorEtherpad() {
   /** Panel derecho PII / Agente (controlado para poder enfocar PII si bloquea el envío). */
   const [collabPanelTab, setCollabPanelTab] = useState<'pii' | 'agent'>('pii')
   const [padAccessNoticeVisible, setPadAccessNoticeVisible] = useState(false)
+  const [editorTourOpen, setEditorTourOpen] = useState(false)
+  const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
+  const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
 
   const agentScoreLabels = useMemo(
     () => documentScoreUiLabels(criteriaDomainFromAgentProfile(agentProfile)),
@@ -190,6 +231,72 @@ export default function DocumentEditorEtherpad() {
     const name = acc.meta?.name
     return name ? `${name} (${acc.address})` : acc.address
   }, [accounts, selectedAccount])
+
+  const editorTourSteps = useMemo(() => {
+    type Step = { id: string; title: string; body: string; selector: string }
+    const steps: Step[] = [
+      {
+        id: 'ed-menu',
+        title: 'Menú lateral',
+        body:
+          'Abre el menú de la app (sidebar) sin salir del documento: mismo acceso a Documentos, Inicio y Ajustes que en el resto de CriterIA.',
+        selector: '[data-tour-id="tour-editor-menu"]',
+      },
+      {
+        id: 'ed-back',
+        title: 'Volver',
+        body: 'Regresa al listado de documentos cuando termines o quieras abrir otro archivo.',
+        selector: '[data-tour-id="tour-editor-back"]',
+      },
+      {
+        id: 'ed-profile',
+        title: 'Perfil del agente',
+        body:
+          'Legal MX o Académico: define el estilo del asistente (contratos frente a investigación). Se guarda en los metadatos del documento.',
+        selector: '[data-tour-id="tour-editor-agent-profile"]',
+      },
+      {
+        id: 'ed-save',
+        title: 'Guardar local (PDF)',
+        body:
+          'Copia el texto actual del pad al PDF en este dispositivo y crea una versión nueva para previsualizarla en Documentos.',
+        selector: '[data-tour-id="tour-editor-save-local"]',
+      },
+    ]
+    if (showEtherpadDevControls) {
+      steps.push({
+        id: 'ed-export-md',
+        title: 'Exportar Markdown',
+        body:
+          'Control opcional (desarrollo o build con controles Etherpad): descarga el contenido del pad como archivo .md.',
+        selector: '[data-tour-id="tour-editor-export-md"]',
+      })
+    }
+    steps.push(
+      {
+        id: 'ed-pad-info',
+        title: 'Información del pad',
+        body:
+          'Este aviso resume quién puede editar el documento colaborativo. Puedes cerrarlo cuando ya lo hayas leído.',
+        selector: '[data-tour-id="tour-editor-pad-info"]',
+      },
+      {
+        id: 'ed-iframe',
+        title: 'Área Etherpad',
+        body:
+          'Aquí escribes en tiempo real. El historial de revisiones (timeslider / línea de tiempo) lo gestiona Etherpad: suele estar en la barra superior del iframe.',
+        selector: '[data-tour-id="tour-editor-iframe-wrap"]',
+      },
+      {
+        id: 'ed-panel',
+        title: 'PII y chat del agente',
+        body:
+          '«PII» revisa datos personales antes de enviar a la IA. «Agente» es el chat con el asistente; puede quedar deshabilitado hasta resolver hallazgos de PII.',
+        selector: '[data-tour-id="tour-editor-collab-panel"]',
+      },
+    )
+    return steps
+  }, [showEtherpadDevControls])
 
   const loadPad = useCallback(async () => {
     if (!documentId) return
@@ -252,6 +359,37 @@ export default function DocumentEditorEtherpad() {
     return () => window.clearTimeout(id)
   }, [documentId])
 
+  /** Primera vez en el editor Etherpad: tour guiado de la barra y el panel lateral. */
+  useEffect(() => {
+    if (!documentId || !padUrl) return
+    let cancelled = false
+    try {
+      const seen =
+        localStorage.getItem('criteria.help.tour.editorEtherpad.v1.seen') === '1' ||
+        localStorage.getItem('nelai.help.tour.editorEtherpad.v1.seen') === '1'
+      if (seen) return
+    } catch {
+      return
+    }
+    const t = window.setTimeout(() => {
+      if (!cancelled) setEditorTourOpen(true)
+    }, 550)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [documentId, padUrl])
+
+  /** Reproducir spotlight desde Ayuda (tutorial 07). */
+  useEffect(() => {
+    const onReplay = () => {
+      if (!documentId || !padUrl) return
+      setEditorTourOpen(true)
+    }
+    window.addEventListener('criteria-replay-editor-spotlight', onReplay)
+    return () => window.removeEventListener('criteria-replay-editor-spotlight', onReplay)
+  }, [documentId, padUrl])
+
   // Persistencia del estado del agente (conversación) por documento.
   const agentStorageKey = useMemo(
     () => (documentId ? `criteria-etherpad-agent:${documentId}` : ''),
@@ -271,6 +409,7 @@ export default function DocumentEditorEtherpad() {
           })
           return
         }
+        setResearchEvidenceLog(normalizeResearchEvidenceLog(doc.researchEvidenceLog))
         setAgentProfile(
           inferAgentProfile({
             documentType: doc.type,
@@ -393,11 +532,53 @@ export default function DocumentEditorEtherpad() {
           console.warn('[Etherpad] persistir chat en documento', e)
         }
       })()
-    }, 700)
+    }, 300)
     return () => {
       if (chatToIdbTimerRef.current) clearTimeout(chatToIdbTimerRef.current)
     }
   }, [documentId, agentMessages])
+
+  useEffect(() => {
+    if (!sourcesModalOpen || !documentId) return
+    void getDocument(documentId).then((d) => {
+      if (d) setResearchEvidenceLog(normalizeResearchEvidenceLog(d.researchEvidenceLog))
+    })
+  }, [sourcesModalOpen, documentId])
+
+  const persistResearchEvidenceAppend = useCallback(
+    async (entries: ResearchEvidenceLogEntry[]) => {
+      if (!documentId || entries.length === 0) return
+      try {
+        const doc = await getDocument(documentId)
+        if (!doc) return
+        const merged = appendResearchEvidenceEntries(doc.researchEvidenceLog, entries)
+        await updateDocument(documentId, { researchEvidenceLog: merged })
+        setResearchEvidenceLog(merged)
+      } catch (e) {
+        console.warn('[Etherpad] bitácora de fuentes', e)
+      }
+    },
+    [documentId],
+  )
+
+  const persistEvidenceUserComment = useCallback(
+    async (entryId: string, userComment: string) => {
+      if (!documentId) return
+      try {
+        const doc = await getDocument(documentId)
+        if (!doc) return
+        const merged = normalizeResearchEvidenceLog(doc.researchEvidenceLog).map((e) =>
+          e.id === entryId ? { ...e, userComment } : e
+        )
+        await updateDocument(documentId, { researchEvidenceLog: merged })
+        setResearchEvidenceLog(merged)
+      } catch (e) {
+        console.warn('[Etherpad] nota en bitácora', e)
+        toast.error('No se pudo guardar la nota')
+      }
+    },
+    [documentId],
+  )
 
   // Persistencia del gate PII por documento + hash de contenido.
   const piiStorageKey = useMemo(
@@ -573,11 +754,25 @@ export default function DocumentEditorEtherpad() {
 
       const doc = live
       const now = Date.now()
+      const priorLen = agentMessages.length
       const userMsg = {
         id: `u_${now}`,
         role: 'user' as const,
         content: trimmed,
         createdAt: now,
+      }
+      if (documentId) {
+        const userUrls = extractHttpUrlsFromText(trimmed)
+        if (userUrls.length) {
+          void persistResearchEvidenceAppend(
+            buildResearchEvidenceEntries(documentId, userUrls, {
+              origin: 'user_message',
+              chatHistoryIndex: priorLen,
+              addedBy: selectedAccount || undefined,
+              indexedFromUserPrompt: trimmed,
+            }),
+          )
+        }
       }
       setAgentMessages((prev) => [...prev, userMsg])
 
@@ -625,6 +820,18 @@ export default function DocumentEditorEtherpad() {
         const assistantContent = res.content || ''
         const { score: documentScore, cleanText } = stripAndParseDocumentScore(assistantContent)
         const clean = cleanText || assistantContent.trim()
+        const mergedForSources = [assistantContent, clean].filter(Boolean).join('\n\n')
+        const assistantRefs = collectAssistantSourceRefs(mergedForSources, res.citations)
+        if (documentId && assistantRefs.length) {
+          void persistResearchEvidenceAppend(
+            buildResearchEvidenceEntriesFromRefs(documentId, assistantRefs, {
+              origin: 'assistant_message',
+              chatHistoryIndex: priorLen + 1,
+              addedBy: selectedAccount || undefined,
+              indexedFromUserPrompt: trimmed,
+            }),
+          )
+        }
         const assistantMsg = {
           id: `a_${Date.now()}`,
           role: 'assistant' as const,
@@ -662,7 +869,7 @@ export default function DocumentEditorEtherpad() {
       }
       return true
     },
-    [AGENT_SYSTEM_PROMPT, agentMessages, documentId, padText, piiRows.length, piiScanned, parseAgentMods],
+    [AGENT_SYSTEM_PROMPT, agentMessages, documentId, padText, piiRows.length, piiScanned, parseAgentMods, persistResearchEvidenceAppend, selectedAccount],
   )
 
   useEffect(() => {
@@ -925,9 +1132,14 @@ export default function DocumentEditorEtherpad() {
       const r = await fetchPadText(documentId)
       const text = r.content || ''
       setPadTextState(text)
+      const chatHistory = mapEtherpadAgentMessagesToChatHistory(agentMessages)
       await updateDocumentContent(documentId, {
         content: text,
-        metadata: {},
+        metadata: {
+          ...doc.metadata,
+          modifiedAt: new Date().toISOString(),
+        },
+        chatHistory,
         saveVersion: true,
         changeDescription: 'Sincronización desde Etherpad (guardar local)',
       })
@@ -942,9 +1154,23 @@ export default function DocumentEditorEtherpad() {
     } finally {
       setSavingLocal(false)
     }
-  }, [documentId])
+  }, [documentId, agentMessages])
+
+  const needsIdentityGate =
+    !documentId && isReady && (accounts.length === 0 || (hasStoredAccounts && !isUnlocked))
+
+  if (!documentId && !isReady) {
+    return (
+      <div className="flex h-full min-h-[200px] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Preparando entorno seguro…
+      </div>
+    )
+  }
 
   return (
+    <>
+      <QuickIdentitySetupDialog open={needsIdentityGate} />
     <div className="h-full w-full p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
@@ -955,10 +1181,17 @@ export default function DocumentEditorEtherpad() {
             className="flex-shrink-0"
             aria-label="Menú de navegación"
             title="Menú"
+            data-tour-id="tour-editor-menu"
           >
             <Menu className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => navigate('/documents')} aria-label="Volver">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/documents')}
+            aria-label="Volver"
+            data-tour-id="tour-editor-back"
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-0">
@@ -974,22 +1207,24 @@ export default function DocumentEditorEtherpad() {
         </div>
         <div className="flex items-center gap-2">
           {documentId && (
-            <Select
-              value={agentProfile}
-              onValueChange={(v) => void persistEtherpadAgentProfile(v as AgentProfile)}
-              disabled={updatingAgentProfile}
-            >
-              <SelectTrigger
-                className="h-9 w-full min-w-[140px] max-w-[280px] text-xs sm:text-sm"
-                aria-label="Perfil del agente"
+            <div className="min-w-0 max-w-[280px]" data-tour-id="tour-editor-agent-profile">
+              <Select
+                value={agentProfile}
+                onValueChange={(v) => void persistEtherpadAgentProfile(v as AgentProfile)}
+                disabled={updatingAgentProfile}
               >
-                <SelectValue placeholder="Perfil" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="academic_es">Académico (ensayos e investigación)</SelectItem>
-                <SelectItem value="legal_mx">Legal MX (contratos y revisión legal)</SelectItem>
-              </SelectContent>
-            </Select>
+                <SelectTrigger
+                  className="h-9 w-full min-w-[140px] max-w-[280px] text-xs sm:text-sm"
+                  aria-label="Perfil del agente"
+                >
+                  <SelectValue placeholder="Perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="academic_es">Académico (ensayos e investigación)</SelectItem>
+                  <SelectItem value="legal_mx">Legal MX (contratos y revisión legal)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           )}
           {documentId && showEtherpadDevControls && (
             <Button variant="outline" size="sm" onClick={loadPad} disabled={loadingPad} title="Recrear sesión e iframe">
@@ -1005,11 +1240,24 @@ export default function DocumentEditorEtherpad() {
           )}
           {documentId && (
             <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSourcesModalOpen(true)}
+              title="Bitácora de fuentes (URLs del agente)"
+            >
+              <BookMarked className="h-4 w-4 mr-2" />
+              Fuentes
+            </Button>
+          )}
+          {documentId && (
+            <Button
               variant="default"
               size="sm"
               onClick={handleSaveLocal}
               disabled={savingLocal || loadingText}
               title="Regenera el PDF en este dispositivo con el texto actual del pad"
+              data-tour-id="tour-editor-save-local"
             >
               <Save className="h-4 w-4 mr-2" />
               {savingLocal ? 'Guardando…' : 'Guardar local'}
@@ -1020,6 +1268,7 @@ export default function DocumentEditorEtherpad() {
               variant="outline"
               size="sm"
               disabled={exportingMarkdown}
+              data-tour-id="tour-editor-export-md"
               onClick={async () => {
                 if (!documentId) return
                 try {
@@ -1049,7 +1298,10 @@ export default function DocumentEditorEtherpad() {
       </div>
 
       {documentId && padAccessNoticeVisible && (
-        <Alert className="relative mb-3 border-muted-foreground/20 bg-muted/30 pr-10">
+        <Alert
+          className="relative mb-3 border-muted-foreground/20 bg-muted/30 pr-10"
+          data-tour-id="tour-editor-pad-info"
+        >
           <Button
             type="button"
             variant="ghost"
@@ -1129,7 +1381,10 @@ export default function DocumentEditorEtherpad() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-3 h-[calc(100vh-140px)]">
-          <div className="w-full rounded-lg border overflow-hidden bg-background">
+          <div
+            className="w-full rounded-lg border overflow-hidden bg-background"
+            data-tour-id="tour-editor-iframe-wrap"
+          >
             {padUrl ? (
               <iframe
                 key={`${padUrl}|${iframeNonce}`}
@@ -1146,7 +1401,10 @@ export default function DocumentEditorEtherpad() {
             )}
           </div>
 
-          <div className="w-full rounded-lg border bg-background p-3 overflow-auto">
+          <div
+            className="w-full rounded-lg border bg-background p-3 overflow-auto"
+            data-tour-id="tour-editor-collab-panel"
+          >
             <Tabs value={collabPanelTab} onValueChange={(v) => setCollabPanelTab(v as 'pii' | 'agent')}>
               <TabsList className="w-full">
                 <TabsTrigger value="pii" className="flex-1">
@@ -1721,6 +1979,79 @@ export default function DocumentEditorEtherpad() {
         </div>
       )}
     </div>
+
+      <Dialog open={sourcesModalOpen} onOpenChange={setSourcesModalOpen}>
+        <DialogContent className="flex min-h-0 max-h-[88vh] max-w-[min(100vw-1rem,1180px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(100vw-1rem,1180px)]">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <BookMarked className="h-5 w-5 text-primary" />
+              Bitácora de fuentes
+            </DialogTitle>
+            <DialogDescription>
+              URLs registradas desde el agente (Etherpad). Se guardan en el documento local.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => downloadResearchEvidenceJson(researchEvidenceLog, documentId || 'documento')}
+            >
+              Exportar JSON
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => downloadResearchEvidenceCsv(researchEvidenceLog, documentId || 'documento')}
+            >
+              Exportar CSV
+            </Button>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {researchEvidenceLog.length} entrada{researchEvidenceLog.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col bg-muted/15">
+            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] [scrollbar-width:thin] [scrollbar-color:hsl(var(--muted-foreground)/0.35)_transparent] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/30 [&::-webkit-scrollbar-track]:bg-transparent">
+              {researchEvidenceLog.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Aún no hay fuentes. Tras enviar mensajes con enlaces o citas web, usa «Guardar local» para asegurar el
+                  PDF y el chat en el documento.
+                </p>
+              ) : (
+                <ResearchEvidenceLogTable
+                  entries={[...researchEvidenceLog].reverse()}
+                  onPersistUserComment={persistEvidenceUserComment}
+                />
+              )}
+            </div>
+            <div className="flex shrink-0 justify-end border-t border-border/60 px-4 py-3">
+              <Button variant="ghost" size="sm" onClick={() => setSourcesModalOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SpotlightTour
+        open={editorTourOpen}
+        onOpenChange={(v) => {
+          setEditorTourOpen(v)
+          if (!v) {
+            try {
+              localStorage.setItem('criteria.help.tour.editorEtherpad.v1.seen', '1')
+              localStorage.setItem('nelai.help.tour.editorEtherpad.v1.seen', '1')
+            } catch {
+              /* ignore */
+            }
+          }
+        }}
+        initialStepId={editorTourSteps[0]?.id}
+        steps={editorTourSteps}
+      />
+    </>
   )
 }
 

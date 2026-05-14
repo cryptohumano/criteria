@@ -60,7 +60,7 @@ try {
     await client.query(
       `INSERT INTO organizations (id, name, plan, kind, created_at, updated_at)
        VALUES ($1, $2, 'enterprise', 'team'::"OrganizationKind", NOW(), NOW())`,
-      [orgId, 'Operaciones Nelai'],
+      [orgId, 'Operaciones criterIA'],
     )
 
     await client.query(
@@ -68,7 +68,7 @@ try {
        VALUES ($1, $2, $3, $4, 'owner'::"OrgMemberRole", 'superadmin'::"UserPlatformRole", $5, NOW(), NOW(), NOW())`,
       [userId, email, displayName, passwordHash, orgId],
     )
-    console.log('Listo: superadmin creado en org interna "Operaciones Nelai".', email)
+    console.log('Listo: superadmin creado en org interna "Operaciones criterIA".', email)
   }
 } finally {
   await client.end()

@@ -43,24 +43,44 @@ export interface RegisterBody {
   password?: string
   displayName?: string
   accountKind?: string
+  /** Token de invitaci?n (enlace /register?invite=?). Si viene, se une a la org existente en lugar de crear una nueva. */
+  inviteToken?: string
 }
 
 export interface LoginBody {
   email?: string
   password?: string
+  /** Misma invitaci?n que en registro (`/login?invite=?`). Tras validar credenciales, une a la organizaci?n. */
+  inviteToken?: string
 }
 
 /**
- * Cuenta equipo (B2B): `accountKind` = "team" y nombre de organización obligatorio.
+ * Cuenta equipo (B2B): `accountKind` = "team" y nombre de organizaci?n obligatorio.
  * Cuenta personal (B2C): `accountKind` = "personal" o sin nombre de org.
- * `platformRole` superadmin solo por operación en base de datos, nunca por este endpoint.
+ * `platformRole` superadmin solo por operaci?n en base de datos, nunca por este endpoint.
  */
 export async function prismaRegister(prisma: PrismaClient, body: RegisterBody): Promise<PrismaRegisterResult> {
+  const rawInvite = typeof body.inviteToken === 'string' ? body.inviteToken.trim() : ''
+  if (rawInvite) {
+    const { prismaRegisterWithInviteToken } = await import('./org/orgInviteService.js')
+    return prismaRegisterWithInviteToken(prisma, body, rawInvite) as Promise<PrismaRegisterResult>
+  }
+
   const { organizationName, email, password, displayName, accountKind } = body || {}
   if (!email || !password) {
     throw new HttpError('email y password son requeridos', 400)
   }
   const em = normEmail(email)
+  const existingUser = await prisma.user.findUnique({
+    where: { email: em },
+    select: { passwordHash: true },
+  })
+  if (existingUser) {
+    if (!existingUser.passwordHash) {
+      throw new HttpError('Ya existe una cuenta con este correo (Google). Inicia sesi?n con Google.', 409)
+    }
+    throw new HttpError('Ya existe una cuenta con este correo. Inicia sesi?n.', 409)
+  }
   const disp = String(displayName || em.split('@')[0] || 'Usuario').trim()
   const kind = String(accountKind || '')
     .toLowerCase()
@@ -106,8 +126,8 @@ export async function prismaRegister(prisma: PrismaClient, body: RegisterBody): 
       await prisma.organization.delete({ where: { id: result.org.id } }).catch(() => {})
       throw new HttpError(
         e instanceof Error
-          ? `No se pudo enviar el correo de verificación: ${e.message}`
-          : 'No se pudo enviar el correo de verificación',
+          ? `No se pudo enviar el correo de verificaci?n: ${e.message}`
+          : 'No se pudo enviar el correo de verificaci?n',
         503
       )
     }
@@ -181,9 +201,14 @@ export interface GoogleUserProfile {
   name?: string
 }
 
-export async function prismaLoginWithGoogle(prisma: PrismaClient, profile: GoogleUserProfile) {
+export async function prismaLoginWithGoogle(
+  prisma: PrismaClient,
+  profile: GoogleUserProfile,
+  options?: { rawInviteToken?: string }
+) {
+  const rawInvite = String(options?.rawInviteToken || '').trim()
   if (!profile.emailVerified) {
-    throw new HttpError('El correo de Google no está verificado', 403)
+    throw new HttpError('El correo de Google no est? verificado', 403)
   }
   const em = normEmail(profile.email)
   let user = await prisma.user.findFirst({
@@ -192,7 +217,7 @@ export async function prismaLoginWithGoogle(prisma: PrismaClient, profile: Googl
   })
 
   if (user && user.googleSub && user.googleSub !== profile.sub) {
-    throw new HttpError('Este correo ya está vinculado a otra cuenta de Google', 409)
+    throw new HttpError('Este correo ya est? vinculado a otra cuenta de Google', 409)
   }
 
   if (user && user.email === em && !user.googleSub) {
@@ -208,6 +233,16 @@ export async function prismaLoginWithGoogle(prisma: PrismaClient, profile: Googl
   }
 
   if (!user) {
+    if (rawInvite) {
+      const { prismaJoinOrganizationAsNewGoogleUser } = await import('./org/orgInviteService.js')
+      const disp = String(profile.name || em.split('@')[0] || 'Usuario').trim()
+      return prismaJoinOrganizationAsNewGoogleUser(prisma, {
+        email: profile.email,
+        displayName: disp,
+        googleSub: profile.sub,
+        rawInviteToken: rawInvite,
+      })
+    }
     const token = randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + SESSION_MS)
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
@@ -264,6 +299,18 @@ export async function prismaLoginWithGoogle(prisma: PrismaClient, profile: Googl
     }
   }
 
+  if (rawInvite) {
+    const { prismaApplyOrganizationInvite } = await import('./org/orgInviteService.js')
+    await prismaApplyOrganizationInvite(prisma, {
+      user: { id: user.id, organizationId: user.organizationId, orgRole: user.orgRole },
+      rawInviteToken: rawInvite,
+    })
+    user = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      include: { organization: true },
+    })
+  }
+
   const token = randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + SESSION_MS)
   await prisma.session.create({
@@ -289,26 +336,38 @@ export async function prismaLoginWithGoogle(prisma: PrismaClient, profile: Googl
 }
 
 export async function prismaLogin(prisma: PrismaClient, body: LoginBody) {
-  const { email, password } = body || {}
+  const { email, password, inviteToken } = body || {}
   if (!email || !password) {
     throw new HttpError('email y password son requeridos', 400)
   }
   const em = normEmail(email)
-  const user = await prisma.user.findUnique({
+  let user = await prisma.user.findUnique({
     where: { email: em },
     include: { organization: true },
   })
   if (!user?.passwordHash) {
-    throw new HttpError('Esta cuenta usa solo Google. Inicia sesión con Google.', 401)
+    throw new HttpError('Esta cuenta usa solo Google. Inicia sesi?n con Google.', 401)
   }
   if (!(await bcrypt.compare(String(password), user.passwordHash))) {
-    throw new HttpError('Credenciales inválidas', 401)
+    throw new HttpError('Credenciales inv?lidas', 401)
   }
   if (!user.emailVerifiedAt) {
     throw new HttpError(
       'Verifica tu correo antes de entrar. Revisa la bandeja (y spam) o pide un nuevo enlace desde el registro.',
       403
     )
+  }
+  const rawInvite = typeof inviteToken === 'string' ? inviteToken.trim() : ''
+  if (rawInvite) {
+    const { prismaApplyOrganizationInvite } = await import('./org/orgInviteService.js')
+    await prismaApplyOrganizationInvite(prisma, {
+      user: { id: user.id, organizationId: user.organizationId, orgRole: user.orgRole },
+      rawInviteToken: rawInvite,
+    })
+    user = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      include: { organization: true },
+    })
   }
   const token = randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + SESSION_MS)

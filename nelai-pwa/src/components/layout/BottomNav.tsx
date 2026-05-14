@@ -84,6 +84,7 @@ export function BottomNav() {
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger asChild>
             <Button
+              data-tour-id="tour-mobile-nav-fab"
               size="lg"
               className="h-14 w-14 rounded-full transition-all duration-200"
               aria-label="Abrir menú de navegación"

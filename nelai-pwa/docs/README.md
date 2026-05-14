@@ -75,3 +75,6 @@ el contenido visible al usuario.
 - `03_EXPORTAR_MARKDOWN.md`
 - `04_CUENTA_CRITERIA_VS_SUBSTRATE.md`
 - `05_PII_Y_PRIVACIDAD.md`
+- `06_GUIA_SPOTLIGHT_DOCUMENTOS_INICIO.md` — primer inicio: spotlight de acciones de documentos
+- `07_GUIA_SPOTLIGHT_EDITOR_ETHERPAD.md` — primera vez en el editor Etherpad: barra y panel
+- `08_GUIA_SPOTLIGHT_EDITOR_QUILL.md` — primera vez en el editor local Quill: barra, formato y vista previa

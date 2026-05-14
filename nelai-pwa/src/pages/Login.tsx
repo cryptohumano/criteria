@@ -1,25 +1,56 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 import { getGoogleOAuthStartUrl, resendVerificationEmail } from '@/services/workspace/workspaceAuthApi'
+import {
+  fetchInvitePreview,
+  acceptOrgInviteWithSession,
+  type InvitePreview,
+} from '@/services/workspace/orgInviteApi'
+import { refreshSessionFromServer } from '@/services/workspace/refreshSessionFromServer'
 
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, signIn, isHydrated } = useWorkspaceSession()
+  const [searchParams] = useSearchParams()
+  const inviteToken = (searchParams.get('invite') || '').trim()
+  const { session, signIn, signOut, applySession, isHydrated } = useWorkspaceSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [resendMsg, setResendMsg] = useState('')
+  const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null)
+  const [inviteErr, setInviteErr] = useState<string | null>(null)
+  const [inviteResolved, setInviteResolved] = useState(() => !inviteToken)
+  const [joining, setJoining] = useState(false)
+  const [joinErr, setJoinErr] = useState('')
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/'
+
+  useEffect(() => {
+    if (!inviteToken) return
+    let cancel = false
+    ;(async () => {
+      try {
+        const p = await fetchInvitePreview(inviteToken)
+        if (!cancel) setInvitePreview(p)
+      } catch (e) {
+        if (!cancel) setInviteErr(e instanceof Error ? e.message : 'Invitación no válida')
+      } finally {
+        if (!cancel) setInviteResolved(true)
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [inviteToken])
 
   useEffect(() => {
     if (!isSaaSWorkspaceMode()) {
@@ -28,10 +59,26 @@ export default function Login() {
   }, [navigate])
 
   useEffect(() => {
-    if (isHydrated && session) {
+    if (isHydrated && session && !inviteToken) {
       navigate(from, { replace: true })
     }
-  }, [isHydrated, session, navigate, from])
+  }, [isHydrated, session, inviteToken, navigate, from])
+
+  const handleJoinWithCurrentSession = async () => {
+    if (!inviteToken) return
+    setJoinErr('')
+    setJoining(true)
+    try {
+      await acceptOrgInviteWithSession(inviteToken)
+      const next = await refreshSessionFromServer()
+      if (next) applySession(next)
+      navigate(from, { replace: true })
+    } catch (e) {
+      setJoinErr(e instanceof Error ? e.message : 'No se pudo aceptar la invitación')
+    } finally {
+      setJoining(false)
+    }
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -39,7 +86,7 @@ export default function Login() {
     setLoading(true)
     try {
       setResendMsg('')
-      await signIn(email.trim(), password)
+      await signIn(email.trim(), password, inviteToken ? { inviteToken } : undefined)
       navigate(from, { replace: true })
     } catch (err) {
       setResendMsg('')
@@ -64,16 +111,74 @@ export default function Login() {
       </div>
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md border shadow-sm">
-          <CardHeader>
+            <CardHeader>
             <CardTitle>Iniciar sesión</CardTitle>
             <CardDescription>
-              Accede al espacio de trabajo de tu organización. La firma criptográfica de documentos se
-              configura después en esta misma app.
+              {inviteToken ? (
+                <>
+                  Tienes un enlace de invitación: al entrar (correo/contraseña o Google) te unirás a la organización del
+                  enlace si la invitación sigue siendo válida.
+                </>
+              ) : (
+                <>
+                  Accede al espacio de trabajo de tu organización. La firma criptográfica de documentos se configura
+                  después en esta misma app.
+                </>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {session && inviteToken ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Ya has iniciado sesión. Puedes unirte a la organización de la invitación con la cuenta actual, o
+                  cerrar sesión para entrar con otro correo.
+                </p>
+                {inviteErr ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {inviteErr}
+                  </p>
+                ) : !inviteResolved ? (
+                  <p className="text-sm text-muted-foreground">Validando invitación…</p>
+                ) : invitePreview ? (
+                  <>
+                    <div className="rounded-md border border-border bg-muted/40 p-3 text-sm space-y-1">
+                      <p className="font-medium text-foreground">{invitePreview.organizationName}</p>
+                      <p className="text-muted-foreground">
+                        Rol asignado: <span className="text-foreground">{invitePreview.role}</span> · caduca el{' '}
+                        {new Date(invitePreview.expiresAt).toLocaleString('es-ES')}
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Sesión actual: <strong className="text-foreground">{session.user.email}</strong>
+                    </p>
+                    {joinErr ? <p className="text-sm text-destructive">{joinErr}</p> : null}
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={joining}
+                      onClick={() => void handleJoinWithCurrentSession()}
+                    >
+                      {joining ? 'Uniendo…' : `Unirme a ${invitePreview.organizationName}`}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled={joining}
+                      onClick={() => signOut()}
+                    >
+                      Cerrar sesión y usar otro correo
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Invitación no disponible.</p>
+                )}
+              </div>
+            ) : (
+            <>
             {(() => {
-              const googleUrl = getGoogleOAuthStartUrl()
+              const googleUrl = getGoogleOAuthStartUrl(inviteToken || undefined)
               return googleUrl ? (
                 <div className="mb-4">
                   <Button
@@ -148,7 +253,10 @@ export default function Login() {
               </Button>
               <p className="text-center text-sm text-muted-foreground">
                 ¿Nueva organización?{' '}
-                <Link to="/register" className="text-primary underline-offset-4 hover:underline">
+                <Link
+                  to={inviteToken ? `/register?invite=${encodeURIComponent(inviteToken)}` : '/register'}
+                  className="text-primary underline-offset-4 hover:underline"
+                >
                   Crear cuenta
                 </Link>
               </p>
@@ -169,6 +277,8 @@ export default function Login() {
                 Privacidad
               </Link>
             </nav>
+            </>
+            )}
           </CardContent>
         </Card>
       </div>

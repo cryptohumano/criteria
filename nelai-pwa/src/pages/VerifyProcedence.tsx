@@ -1,5 +1,5 @@
 /**
- * Verificar procedencia — Agente Verificador Nelai
+ * Verificar procedencia — Agente verificador criterIA
  * Sube archivo + metadata (JSON) y obtén un reporte de verificación.
  */
 
@@ -22,6 +22,7 @@ import { getAssetFromDKG, summarizeDkgAssertions, getDkgConfig } from '@/service
 import { readC2paManifest, type C2paManifestInfo } from '@/services/c2pa/c2paReader'
 import jsQR from 'jsqr'
 import { toast } from 'sonner'
+import { PageShell } from '@/components/layout/PageShell'
 
 type VerificationStatus = 'idle' | 'verifying' | 'valid' | 'invalid' | 'error'
 type VerifyMode = 'file' | 'ual'
@@ -362,7 +363,7 @@ export default function VerifyProcedence() {
   }
 
   return (
-    <div className="container max-w-2xl py-6 space-y-6">
+    <PageShell width="narrow" className="space-y-6 py-6">
       <div>
         <h1 className="text-2xl font-bold">Verificar procedencia</h1>
         <p className="text-muted-foreground mt-1">
@@ -636,6 +637,6 @@ export default function VerifyProcedence() {
           </Button>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   )
 }

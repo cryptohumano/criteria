@@ -104,6 +104,10 @@ export default defineConfig(({ mode, command }) => {
   const apiProxyTarget = (env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3456').replace(/\/+$/, '')
   const isDevServer = command === 'serve'
   const base = getBase(isDevServer)
+  /** SaaS en local: sin SW (Stripe /settings, /api, OAuth). PWA en dev solo con `VITE_PWA_DEV=true`. */
+  const viteAppMode = (process.env.VITE_APP_MODE || env.VITE_APP_MODE || '').toLowerCase().trim()
+  const pwaDevExplicit = process.env.VITE_PWA_DEV === 'true'
+  const disablePwaInSaasDev = isDevServer && viteAppMode === 'saas' && !pwaDevExplicit
 
   // Log para debugging
   console.log('[Vite Config] Base path calculado:', base)
@@ -111,6 +115,9 @@ export default defineConfig(({ mode, command }) => {
   console.log('[Vite Config] GITHUB_REPOSITORY:', process.env.GITHUB_REPOSITORY)
   console.log('[Vite Config] NODE_ENV:', process.env.NODE_ENV)
   console.log('[Vite Config] VITE_BASE_URL:', process.env.VITE_BASE_URL)
+  if (disablePwaInSaasDev) {
+    console.log('[Vite Config] PWA desactivado en dev SaaS (sin VITE_PWA_DEV). Usa VITE_PWA_DEV=true para SW local.')
+  }
 
   if (command === 'build' && (!base || base === '/')) {
     console.log('[Vite Config] Base path "/" (raíz). OK para Railway / hosting propio. Para GitHub Pages necesitas VITE_BASE_URL=/<repo>/ o GITHUB_REPOSITORY.')
@@ -200,6 +207,7 @@ export default defineConfig(({ mode, command }) => {
     tailwindcss(),
     transformHtmlPlugin(base),
     VitePWA({
+      disable: disablePwaInSaasDev,
       registerType: 'autoUpdate',
       includeAssets: [
         'favicon.ico', 
@@ -219,9 +227,9 @@ export default defineConfig(({ mode, command }) => {
         // Sin excluir /api/, el SW intercepta `window.location.href = /api/auth/google/start`
         // y sirve index.html: React Router muestra 404 y OAuth nunca llega al servidor.
         navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/, /^\/api\//],
-        // Excluir servicios de mapas del procesamiento de Workbox completamente
-        // Esto previene que Workbox intente procesar estas URLs
-        navigateFallbackAllowlist: undefined,
+        // Misma semántica que Workbox cuando solo hay denylist: cualquier ruta SPA
+        // (Stripe redirige a /settings?billing=success; sin esto el SW en dev usa solo /^\/$/).
+        navigateFallbackAllowlist: [/./],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB (aumentado de 2 MB por defecto)
         runtimeCaching: [
           {
@@ -264,8 +272,8 @@ export default defineConfig(({ mode, command }) => {
         ]
       },
       manifest: {
-        name: 'Nelai',
-        short_name: 'Nelai',
+        name: 'criterIA',
+        short_name: 'criterIA',
         description: 'Procedencia y autenticidad verificables con identidad Polkadot y DKG',
         theme_color: '#0D9488',
         background_color: '#ffffff',
@@ -327,12 +335,11 @@ export default defineConfig(({ mode, command }) => {
           }
         ]
       },
-      // En dev, generar el SW en `dev-dist/` puede fallar con ENOENT si el archivo aún no existe
-      // (p. ej. primer arranque o carpeta borrada). El PWA sigue activo en `vite build` / producción.
-      // Para probar SW en local: `VITE_PWA_DEV=true yarn dev` (tras un build previo suele ser más estable).
+      // SW en `vite serve` solo si el plugin no está desactivado (ver `disablePwaInSaasDev`) y `VITE_PWA_DEV=true`.
       devOptions: {
         enabled: process.env.VITE_PWA_DEV === 'true',
         type: 'module',
+        navigateFallbackAllowlist: [/./],
       },
     })
   ],

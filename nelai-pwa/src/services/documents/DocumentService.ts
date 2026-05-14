@@ -9,8 +9,10 @@ import type {
   DocumentMetadata,
   GPSMetadata,
   PrivacyPlaceholderEntry,
+  ResearchEvidenceLogEntry,
 } from '@/types/documents'
 import { saveDocument, getDocument, updateDocument } from '@/utils/documentStorage'
+import { appendResearchEvidenceEntries } from '@/utils/researchEvidenceLog'
 import { generatePDF, generateSimplePDF, generateContractPDF } from '@/services/pdf/PDFGenerator'
 import type { PDFGenerationOptions } from '@/services/pdf/PDFGenerator'
 
@@ -86,6 +88,7 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Do
     synced: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    researchEvidenceLog: [],
   }
 
   await saveDocument(document)
@@ -108,6 +111,11 @@ export async function updateDocumentContent(
     appliedMods?: Record<string, number>
     /** Registro de placeholders del editor (revertir / etiquetas). */
     privacyPlaceholderRegistry?: PrivacyPlaceholderEntry[]
+    /**
+     * Añade entradas a la bitácora de fuentes sin sustituir las existentes
+     * (deduplicación por `id` de entrada).
+     */
+    researchEvidenceLogAppend?: ResearchEvidenceLogEntry[]
     changeDescription?: string        // Descripción para el historial (ej: "Sugerencia de IA aplicada")
     saveVersion?: boolean             // Si se debe guardar este cambio en el historial
   }
@@ -163,6 +171,10 @@ export async function updateDocumentContent(
     relatedAccount: options.relatedAccount ?? existing.relatedAccount,
     chatHistory: options.chatHistory ?? existing.chatHistory,
     appliedMods: options.appliedMods ?? existing.appliedMods,
+    researchEvidenceLog:
+      options.researchEvidenceLogAppend?.length
+        ? appendResearchEvidenceEntries(existing.researchEvidenceLog, options.researchEvidenceLogAppend)
+        : existing.researchEvidenceLog,
     privacyPlaceholderRegistry:
       options.privacyPlaceholderRegistry ?? existing.privacyPlaceholderRegistry,
     signatures: [], // Contenido cambió, firmas anteriores ya no aplican
@@ -228,6 +240,7 @@ export async function createContractDocument(
     synced: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    researchEvidenceLog: [],
   }
 
   await saveDocument(document)
@@ -281,6 +294,7 @@ export async function createDocumentFromPDF(
     synced: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    researchEvidenceLog: [],
   }
 
   await saveDocument(document)

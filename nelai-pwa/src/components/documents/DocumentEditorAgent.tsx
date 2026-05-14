@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Loader2,
   Paperclip,
@@ -29,10 +28,8 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  MarkdownContent,
-  stripMarkdown,
-} from '@/components/ui/markdown-content'
+import { MarkdownContent } from '@/components/ui/markdown-content'
+import { stripMarkdown } from '@/utils/markdownStrip'
 import { getActiveLLMConfig } from '@/config/llmConfig'
 import { canUseLlmForAgent } from '@/utils/llmAvailability'
 import { chatCompletion } from '@/services/criteria/llmClient'
@@ -53,7 +50,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { PrivacyPlaceholderEntry } from '@/types/documents'
+import type { PrivacyPlaceholderEntry, ResearchEvidenceLogEntry } from '@/types/documents'
+import {
+  buildResearchEvidenceEntries,
+  buildResearchEvidenceEntriesFromRefs,
+  collectAssistantSourceRefs,
+  extractHttpUrlsFromText,
+} from '@/utils/researchEvidenceLog'
 import { kindFromNelaiBracketToken } from '@/services/privacy/criteriaPlaceholders'
 import {
   SCORE_API_REMINDER,
@@ -89,6 +92,8 @@ export interface DocumentEditorAgentProps {
   onOpenChange: (open: boolean) => void
   /** Al cambiar de documento o al recargar desde almacenamiento, hidrata el chat */
   documentId?: string
+  /** ID estable para la bitácora de fuentes (p. ej. UUID de sesión si aún no hay `documentId` en la ruta). */
+  evidenceDocumentId?: string
   chatSessionKey?: number
   documentContext: {
     title: string
@@ -111,9 +116,15 @@ export interface DocumentEditorAgentProps {
   onRegisterPrivacyMappingsFromRows?: (rows: PiiReviewRow[]) => void
   /** Lleva la vista y la selección del Quill al token en el documento. */
   onGoToDocumentPlaceholder?: (placeholder: string) => void
+  /** Pestaña inicial del panel (p. ej. `privacy` para analizar contrato con sanitización). */
+  initialSubView?: 'chat' | 'privacy'
   editorApiRef: React.RefObject<EditorApi | null>
   initialMessages?: ChatMessage[]
   onMessagesChange?: (messages: ChatMessage[]) => void
+  /** Persiste URLs / fuentes detectadas en el hilo (IndexedDB vía el padre). */
+  onResearchEvidenceAppend?: (entries: ResearchEvidenceLogEntry[]) => void
+  /** Cuenta autora (p. ej. SS58) para trazabilidad en la bitácora. */
+  researchEvidenceAddedBy?: string
   onContentChange?: (content: string, description: string) => void
   appliedMods?: Record<string, number>
   onAppliedModsChange?: (mods: Record<string, number>) => void
@@ -238,6 +249,7 @@ export function DocumentEditorAgent({
   open,
   onOpenChange,
   documentId,
+  evidenceDocumentId,
   chatSessionKey = 0,
   documentContext,
   agentProfileOverride,
@@ -245,6 +257,8 @@ export function DocumentEditorAgent({
   editorApiRef,
   initialMessages = [],
   onMessagesChange,
+  onResearchEvidenceAppend,
+  researchEvidenceAddedBy,
   onContentChange,
   appliedMods = {},
   onAppliedModsChange,
@@ -254,7 +268,10 @@ export function DocumentEditorAgent({
   onSetDocumentPlaceholderLabel,
   onRegisterPrivacyMappingsFromRows,
   onGoToDocumentPlaceholder,
+  initialSubView,
 }: DocumentEditorAgentProps) {
+  const evidenceDocId = evidenceDocumentId ?? documentId
+
   const systemPrompt = useMemo(() => {
     const profile = agentProfileOverride || inferAgentProfile({ documentType: documentContext?.type })
     return agentSystemPromptForProfile(profile)
@@ -279,6 +296,8 @@ export function DocumentEditorAgent({
   }
 
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const initialMessagesRef = useRef(initialMessages)
+  initialMessagesRef.current = initialMessages
   const lastChatHydrateRef = useRef<{ doc: string; key: number }>({ doc: '', key: -1 })
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<Array<{ mimeType: string; data: string; fileName: string }>>([])
@@ -323,7 +342,7 @@ export function DocumentEditorAgent({
     hadPending: boolean
   } | null>(null)
 
-  const [agentSubView, setAgentSubView] = useState<'chat' | 'privacy'>('chat')
+  const [agentSubView, setAgentSubView] = useState<'chat' | 'privacy'>(() => initialSubView ?? 'chat')
   /** Incrementa al abrir cada revisión PII para reiniciar estado interno del panel. */
   const [privacyReviewSession, setPrivacyReviewSession] = useState(0)
   const [lastPrivacyTabRows, setLastPrivacyTabRows] = useState<PiiReviewRow[]>([])
@@ -397,22 +416,28 @@ export function DocumentEditorAgent({
     }
   }, [pdfPiiOpen, sendPiiOpen])
 
-  /** Hidratar chat y adjuntos desde el documento al cargar o al cambiar de documento (no en cada actualización del padre). */
+  /**
+   * Hidratar chat solo al cambiar `documentId` o `chatSessionKey` (carga desde IDB / sesión).
+   * No depende de `initialMessages` en el array de deps: si no, cada re-render del padre puede
+   * vaciar el hilo (p. ej. HMR o referencias nuevas de `chatHistory`).
+   */
   useEffect(() => {
     const doc = documentId ?? ''
     if (lastChatHydrateRef.current.doc === doc && lastChatHydrateRef.current.key === chatSessionKey) {
       return
     }
     lastChatHydrateRef.current = { doc, key: chatSessionKey }
-    setMessages(initialMessages)
-    const merged = collectAttachmentsFromMessages(initialMessages)
+    const next = initialMessagesRef.current
+    const list = Array.isArray(next) ? next : []
+    setMessages(list)
+    const merged = collectAttachmentsFromMessages(list)
     setReferenceFiles(merged.length > 0 ? merged : [])
-    const lastUserWithSubs = [...initialMessages]
+    const lastUserWithSubs = [...list]
       .reverse()
       .find((m) => m.role === 'user' && m.privacySubstitutions && m.privacySubstitutions.length > 0)
     setLastPrivacyTabRows(lastUserWithSubs?.privacySubstitutions ?? [])
     setAgentSubView('chat')
-  }, [documentId, chatSessionKey, initialMessages])
+  }, [documentId, chatSessionKey])
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -598,6 +623,22 @@ export function DocumentEditorAgent({
         : userContentForApiBase
 
     const priorMessages = messagesRef.current
+    const userChatIndex = priorMessages.length
+
+    if (evidenceDocId && onResearchEvidenceAppend) {
+      const userUrls = extractHttpUrlsFromText(opts.userContentDisplay)
+      if (userUrls.length) {
+        const entries = buildResearchEvidenceEntries(evidenceDocId, userUrls, {
+          origin: 'user_message',
+          chatHistoryIndex: userChatIndex,
+          addedBy: researchEvidenceAddedBy,
+          indexedFromUserPrompt: opts.userContentDisplay,
+        })
+        void Promise.resolve(onResearchEvidenceAppend(entries)).catch((e) =>
+          console.error('[DocumentEditorAgent] bitácora (mensaje usuario)', e)
+        )
+      }
+    }
 
     setInput('')
     setMessages((prev) => [
@@ -690,11 +731,28 @@ export function DocumentEditorAgent({
       }
       const rawAssistant = res.content || ''
       const { score: documentScore, cleanText } = stripAndParseDocumentScore(rawAssistant)
+      const assistantBody = (cleanText || rawAssistant).trim()
+      const assistantChatIndex = userChatIndex + 1
+      if (evidenceDocId && onResearchEvidenceAppend) {
+        const mergedForSources = [rawAssistant, assistantBody].filter(Boolean).join('\n\n')
+        const refs = collectAssistantSourceRefs(mergedForSources, res.citations)
+        if (refs.length) {
+          const entries = buildResearchEvidenceEntriesFromRefs(evidenceDocId, refs, {
+            origin: 'assistant_message',
+            chatHistoryIndex: assistantChatIndex,
+            addedBy: researchEvidenceAddedBy,
+            indexedFromUserPrompt: opts.userContentDisplay,
+          })
+          void Promise.resolve(onResearchEvidenceAppend(entries)).catch((e) =>
+            console.error('[DocumentEditorAgent] bitácora (respuesta asistente)', e)
+          )
+        }
+      }
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: cleanText || rawAssistant.trim(),
+          content: assistantBody,
           timestamp: Date.now(),
           documentScore: documentScore ?? undefined,
           truncated: !!res.truncated,
@@ -929,7 +987,7 @@ export function DocumentEditorAgent({
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-background border-l relative animate-in slide-in-from-right duration-300 overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 min-w-0 w-full bg-background border-l relative animate-in slide-in-from-right duration-300 overflow-hidden">
       <div className="flex items-center justify-between p-3 border-b shrink-0 bg-background/95 backdrop-blur sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
@@ -999,7 +1057,7 @@ export function DocumentEditorAgent({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden relative">
         <div
           className="shrink-0 flex border-b bg-muted/40 px-2 py-1.5 gap-1"
           role="tablist"
@@ -1288,8 +1346,10 @@ export function DocumentEditorAgent({
             )}
           </div>
         ) : (
-          <ScrollArea className="flex-1 min-h-0 w-full overflow-hidden">
-          <div className="flex flex-col gap-8 p-4 sm:p-6 w-full max-w-full overflow-x-hidden">
+          <>
+          {/* Scroll nativo: evita Radix ScrollArea (viewport interno tipo tabla + líneas largas). */}
+          <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-y-auto overscroll-y-contain px-3 py-4 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] [scrollbar-gutter:stable] sm:px-5 sm:py-6 sm:pr-6">
+          <div className="flex w-full min-w-0 max-w-full flex-col gap-8">
             {messages.length === 0 && (
               <div className="text-center py-12 space-y-4 px-6 animate-in fade-in duration-500">
                 <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-primary/10 rotate-3">
@@ -1316,15 +1376,14 @@ export function DocumentEditorAgent({
               return (
                 <div
                   key={i}
-                  className={cn(
-                    "flex flex-col w-full animate-in slide-in-from-bottom-4 duration-500",
-                    isUser ? "items-end" : "items-start"
-                  )}
+                  className="flex min-w-0 w-full max-w-full flex-col animate-in slide-in-from-bottom-4 duration-500"
                 >
-                  <div className={cn(
-                    "flex items-center gap-2 mb-2 px-1",
-                    isUser ? "flex-row-reverse" : "flex-row"
-                  )}>
+                  <div
+                    className={cn(
+                      'mb-2 flex w-full min-w-0 items-center gap-2 px-1',
+                      isUser ? 'flex-row-reverse justify-end' : 'flex-row justify-start'
+                    )}
+                  >
                     <div className={cn(
                       "w-7 h-7 rounded-lg flex items-center justify-center shadow-md",
                       isUser ? "bg-indigo-600 shadow-indigo-600/20" : isErr
@@ -1346,15 +1405,21 @@ export function DocumentEditorAgent({
 
                   <div
                     className={cn(
-                      "relative p-4 shadow-2xl border transition-all duration-300 break-words overflow-hidden",
-                      isUser 
-                        ? "bg-indigo-600 text-white rounded-2xl rounded-tr-none border-indigo-500/50 max-w-[85%]" 
-                        : isErr
-                          ? "bg-amber-950/50 backdrop-blur-xl text-amber-50 rounded-2xl rounded-tl-none border-amber-500/35 max-w-[90%]"
-                          : "bg-zinc-900/95 backdrop-blur-xl text-zinc-100 rounded-2xl rounded-tl-none border-zinc-800 max-w-[90%]"
+                      'flex w-full min-w-0 shrink-0',
+                      isUser ? 'justify-end' : 'justify-start'
                     )}
                   >
-                    <div className="text-[13px] leading-relaxed">
+                    <div
+                      className={cn(
+                        'relative box-border min-w-0 border px-4 py-4 shadow-2xl transition-all duration-300 [overflow-wrap:anywhere] break-words sm:px-5 sm:py-4',
+                        isUser
+                          ? 'w-full max-w-[min(36rem,92%)] rounded-2xl rounded-tr-none border-indigo-500/50 bg-indigo-600 text-white shadow-indigo-600/20'
+                          : isErr
+                            ? 'w-full max-w-[min(100%,36rem)] rounded-2xl rounded-tl-none border-amber-500/35 bg-amber-950/50 text-amber-50 backdrop-blur-xl'
+                            : 'w-full max-w-[min(100%,36rem)] rounded-2xl rounded-tl-none border-zinc-800 bg-zinc-900/95 text-zinc-100 backdrop-blur-xl'
+                      )}
+                    >
+                    <div className="min-w-0 w-full max-w-full text-[13px] leading-relaxed">
                       {isUser &&
                         (msg.privacySanitized ||
                           (msg.privacySubstitutions && msg.privacySubstitutions.length > 0)) && (
@@ -1389,7 +1454,7 @@ export function DocumentEditorAgent({
 
                       {!isUser && legalScore && !isErr && (
                         <div
-                          className="mb-4 p-4 rounded-xl border shadow-lg"
+                          className="mb-4 min-w-0 max-w-full rounded-xl border p-4 shadow-lg"
                           style={{
                             background:
                               legalScore.score >= 70
@@ -1408,7 +1473,7 @@ export function DocumentEditorAgent({
                           <p className="text-[9px] uppercase tracking-widest font-black text-muted-foreground mb-2">
                             {scoreLabels.panelTitle}
                           </p>
-                          <div className="flex items-center gap-3 mb-3">
+                          <div className="mb-3 flex min-w-0 items-center gap-3">
                             <div className="relative w-14 h-14 shrink-0">
                               <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
                                 <path
@@ -1436,8 +1501,8 @@ export function DocumentEditorAgent({
                                 {legalScore.score}
                               </span>
                             </div>
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
                                 <Shield
                                   className="h-4 w-4"
                                   style={{
@@ -1455,7 +1520,7 @@ export function DocumentEditorAgent({
                                   {scoreLabels.confidence} {legalScore.level}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-zinc-400 leading-relaxed">{legalScore.summary}</p>
+                              <p className="break-words text-[11px] leading-relaxed text-zinc-400">{legalScore.summary}</p>
                             </div>
                           </div>
                           {(legalScore.risks || []).length > 0 && (
@@ -1464,9 +1529,9 @@ export function DocumentEditorAgent({
                                 {scoreLabels.risksTitle}
                               </p>
                               {(legalScore.risks || []).map((risk, ri) => (
-                                <div key={ri} className="flex items-start gap-2 text-[11px] text-zinc-400">
-                                  <span className="text-red-400 mt-0.5 shrink-0">⚠</span>
-                                  <span>{risk}</span>
+                                <div key={ri} className="flex min-w-0 items-start gap-2 text-[11px] text-zinc-400">
+                                  <span className="mt-0.5 shrink-0 text-red-400">⚠</span>
+                                  <span className="min-w-0 break-words">{risk}</span>
                                 </div>
                               ))}
                             </div>
@@ -1521,10 +1586,10 @@ export function DocumentEditorAgent({
                                 key={j} 
                                 className="p-3 bg-black/40 rounded-xl border border-white/5 text-[11px] shadow-lg group/mod transition-all hover:border-primary/20"
                               >
-                                <div className="flex items-start gap-1.5 mb-2 text-zinc-500 italic px-1 text-[10px] line-through opacity-50">
-                                  &quot;{mod.original}&quot;
+                                <div className="mb-2 flex min-w-0 items-start gap-1.5 px-1 text-[10px] italic leading-snug text-zinc-500 line-through opacity-50">
+                                  <span className="min-w-0 break-words">&quot;{mod.original}&quot;</span>
                                 </div>
-                                <div className="font-medium text-zinc-100 mb-4 leading-relaxed px-4 py-3 bg-zinc-800/50 rounded-lg border-l-2 border-primary shadow-inner">
+                                <div className="mb-4 min-w-0 break-words rounded-lg border-l-2 border-primary bg-zinc-800/50 px-4 py-3 font-medium leading-relaxed text-zinc-100 shadow-inner">
                                   {mod.replacement}
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -1563,7 +1628,10 @@ export function DocumentEditorAgent({
                             <div className="h-[1px] flex-1 bg-white/5" />
                           </div>
                           {insertableBlocks.map((block, bi) => (
-                            <div key={bi} className="p-3 bg-emerald-950/20 rounded-xl border border-emerald-500/10 text-[12px] leading-relaxed text-zinc-200">
+                            <div
+                              key={bi}
+                              className="min-w-0 break-words rounded-xl border border-emerald-500/10 bg-emerald-950/20 p-3 text-[12px] leading-relaxed text-zinc-200"
+                            >
                               <MarkdownContent content={block} size="sm" className="text-zinc-200 mb-3" />
                               <Button
                                 variant="default"
@@ -1611,20 +1679,21 @@ export function DocumentEditorAgent({
                       )}
                     </div>
                   </div>
+                  </div>
                 </div>
               )
             })}
             
             {loading && (
-              <div className="flex flex-col gap-2 self-start animate-in fade-in duration-300">
+              <div className="flex max-w-[min(100%,36rem)] min-w-0 flex-col gap-2 self-start animate-in fade-in duration-300">
                 <div className="flex items-center gap-2 mb-1 px-1">
                   <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center border border-white/5">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   </div>
                   <span className="text-[10px] font-black tracking-widest text-muted-foreground/60 uppercase">CriterIA AI</span>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl rounded-tl-none shadow-xl">
-                  <div className="flex items-center gap-3">
+                <div className="max-w-[min(100%,36rem)] min-w-0 rounded-2xl rounded-tl-none border border-zinc-800 bg-zinc-900 p-4 shadow-xl">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex gap-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
                       <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
@@ -1642,7 +1711,8 @@ export function DocumentEditorAgent({
             )}
             <div ref={scrollRef} className="h-4 shrink-0" />
           </div>
-        </ScrollArea>
+          </div>
+          </>
         )}
 
         <div className="p-3 border-t bg-background/80 backdrop-blur-md sticky bottom-0 z-10 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)]">

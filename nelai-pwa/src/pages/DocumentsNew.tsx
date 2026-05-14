@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useKeyringContext } from '@/contexts/KeyringContext'
 import { useDocumentEditorLayout } from '@/contexts/DocumentEditorLayoutContext'
 
+import { PageShell } from '@/components/layout/PageShell'
+
 /**
  * Punto de entrada al crear documento: colaborativo (Etherpad + sesión de plataforma) vs editor local (Quill).
  */
@@ -15,7 +17,7 @@ export default function DocumentsNew() {
   const noWallet = accounts.length === 0
 
   return (
-    <div className="container mx-auto max-w-3xl p-3 sm:p-4 pb-8 space-y-6">
+    <PageShell width="medium" className="space-y-6 pb-8">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" onClick={() => navigate('/documents')} aria-label="Volver">
           <ArrowLeft className="h-4 w-4" />
@@ -30,20 +32,23 @@ export default function DocumentsNew() {
       </div>
 
       {noWallet && (
-        <Card className="border-amber-500/40 bg-amber-500/5">
+        <Card className="border-muted bg-muted/30">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Necesitas una cuenta en el monedero</CardTitle>
+            <CardTitle className="text-base">Identidad en el dispositivo</CardTitle>
             <CardDescription>
-              Para asociar autor y guardar el PDF localmente, crea o importa una cuenta Substrate primero.
+              El editor local te guiará a crear una llave la primera vez. Etherpad necesita ya una cuenta para asociar
+              autoría al guardar en este dispositivo.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate('/accounts')}>Ir a Cuentas</Button>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate('/accounts')}>
+              Ir a Cuentas
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 xl:gap-6">
         <Card className="flex flex-col border-primary/20">
           <CardHeader>
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 mb-2">
@@ -84,7 +89,6 @@ export default function DocumentsNew() {
             <Button
               variant="secondary"
               className="w-full"
-              disabled={noWallet}
               onClick={() => {
                 layoutCtx?.setSidebarOpen?.(false)
                 navigate('/documents/new-local')
@@ -95,6 +99,6 @@ export default function DocumentsNew() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageShell>
   )
 }

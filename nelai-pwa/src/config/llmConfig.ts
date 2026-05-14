@@ -38,7 +38,7 @@ export async function getAllLLMConfigs(): Promise<LLMApiConfig[]> {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as LLMApiConfig[]
-    // Migración: si viene de Nelai, persistir con la clave nueva.
+    // Migración: si venía de una versión anterior del producto, persistir con la clave nueva.
     if (!localStorage.getItem(STORAGE_KEY) && localStorage.getItem(LEGACY_STORAGE_KEY)) {
       localStorage.setItem(STORAGE_KEY, raw)
       localStorage.removeItem(LEGACY_STORAGE_KEY)

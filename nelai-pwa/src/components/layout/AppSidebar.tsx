@@ -1,6 +1,6 @@
 import { useContext } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Activity, ChevronDown, LogOut, Shield, Wallet } from 'lucide-react'
+import { ChevronDown, HelpCircle, LogOut, Shield, Sparkles, Wallet } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -12,6 +12,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
@@ -21,7 +23,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import Identicon from '@polkadot/react-identicon'
 import { KeyringContext, useKeyringContext } from '@/contexts/KeyringContext'
 import { useActiveAccount } from '@/contexts/ActiveAccountContext'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 import {
   getPrimaryNavItems,
@@ -29,6 +31,8 @@ import {
   isWalletNavActive,
   WALLET_NAV,
 } from '@/config/dashboardNavigation'
+import type { HeaderCallbacks } from '@/components/layout/Header'
+import { cn } from '@/lib/utils'
 
 function SidebarLogoutButton() {
   const keyringContext = useContext(KeyringContext)
@@ -51,8 +55,15 @@ function SidebarLogoutButton() {
   )
 }
 
-export function AppSidebar() {
-  const { isMobile, state } = useSidebar()
+/**
+ * Navegación lateral del dashboard (shadcn `Sidebar`): cabecera con toggle/marca (escritorio), menú,
+ * wallet colapsable, pie con cuenta, tema y (opcional) ayuda/tutorial en escritorio.
+ */
+export function AppSidebar({
+  onHelpClick,
+  onReplayTutorialClick,
+}: Partial<HeaderCallbacks> = {}) {
+  const { state } = useSidebar()
   const location = useLocation()
   const pathname = location.pathname
   const primary = getPrimaryNavItems()
@@ -71,12 +82,30 @@ export function AppSidebar() {
   const logoSrc = `${baseUrl}web-app-manifest-192x192.png`
 
   return (
-    <Sidebar variant="inset" collapsible="icon" className="border-sidebar-border">
+    <Sidebar variant="sidebar" collapsible="icon" className="border-sidebar-border border-r">
       <SidebarHeader className="border-b border-sidebar-border gap-0 py-3">
-        <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
+        {/* Sheet móvil: solo marca */}
+        <div className="flex items-center gap-2 px-2 md:hidden group-data-[collapsible=icon]:justify-center">
           <div className="flex h-10 w-10 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 items-center justify-center overflow-hidden rounded-xl bg-sidebar-accent shrink-0 ring-1 ring-sidebar-border">
             <img src={logoSrc} alt="" className="h-full w-full object-cover" />
           </div>
+        </div>
+        {/* Escritorio: toggle + logo (expandido); en rail ancho fijo solo el toggle centrado */}
+        <div
+          className={cn(
+            'hidden md:flex md:items-center',
+            state === 'collapsed' ? 'justify-center px-0' : 'gap-2 px-2',
+          )}
+        >
+          <SidebarTrigger
+            className="h-8 w-8 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            title="Mostrar u ocultar menú lateral"
+          />
+          {state === 'expanded' ? (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-accent ring-1 ring-sidebar-border">
+              <img src={logoSrc} alt="" className="h-full w-full object-cover" />
+            </div>
+          ) : null}
         </div>
       </SidebarHeader>
 
@@ -98,7 +127,10 @@ export function AppSidebar() {
                       className="h-9 px-2"
                       tooltip={state === 'collapsed' ? item.name : undefined}
                     >
-                      <Link to={item.href}>
+                      <Link
+                        to={item.href}
+                        {...(item.href === '/documents' ? { 'data-tour-id': 'tour-nav-documents' as const } : {})}
+                      >
                         <item.icon className="text-sidebar-foreground/85" />
                         <span>{item.name}</span>
                       </Link>
@@ -265,10 +297,68 @@ export function AppSidebar() {
                 <LogOut className="h-4 w-4" />
               </Button>
             ) : null}
+            {onReplayTutorialClick ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="hidden h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex"
+                onClick={() => onReplayTutorialClick()}
+                title="Reproducir tutorial"
+                aria-label="Reproducir tutorial"
+                data-tour-id="replay-tutorial"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {onHelpClick ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="hidden h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex"
+                onClick={() => onHelpClick()}
+                title="Ayuda"
+                aria-label="Ayuda"
+                data-tour-id="help-button"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            ) : null}
             <ThemeToggle className="h-8 w-8 shrink-0 border-0 bg-transparent hover:bg-sidebar-accent" />
           </div>
 
-          <div className="group-data-[collapsible=icon]:hidden">
+          <div className="group-data-[collapsible=icon]:hidden flex items-center justify-end gap-1">
+            <div className="hidden items-center gap-1 md:flex">
+              {onReplayTutorialClick ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  onClick={() => onReplayTutorialClick()}
+                  title="Reproducir tutorial"
+                  aria-label="Reproducir tutorial"
+                  data-tour-id="replay-tutorial"
+                >
+                  <Sparkles className="h-5 w-5" />
+                </Button>
+              ) : null}
+              {onHelpClick ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  onClick={() => onHelpClick()}
+                  title="Ayuda"
+                  aria-label="Ayuda"
+                  data-tour-id="help-button"
+                >
+                  <HelpCircle className="h-5 w-5" />
+                </Button>
+              ) : null}
+            </div>
             <ThemeToggle className="h-9 w-9 shrink-0 border-0 bg-transparent hover:bg-sidebar-accent" />
           </div>
         </div>
@@ -299,6 +389,7 @@ export function AppSidebar() {
         ) : null}
       </SidebarFooter>
 
+      <SidebarRail />
     </Sidebar>
   )
 }

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Building2, LogOut, Shield } from 'lucide-react'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { cn } from '@/lib/utils'
 
 interface WorkspacePlatformBarProps {

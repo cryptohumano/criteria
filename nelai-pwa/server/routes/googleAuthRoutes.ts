@@ -8,7 +8,7 @@ import { getPrisma } from '../db.js'
 import { prismaLoginWithGoogle } from '../prisma-auth.js'
 import { HttpError, getHttpStatus } from '../auth/httpError.js'
 
-const pending = new Map<string, { returnUrl: string; expiresAt: number }>()
+const pending = new Map<string, { returnUrl: string; expiresAt: number; inviteToken?: string }>()
 const PENDING_TTL_MS = 15 * 60 * 1000
 
 function prunePending() {
@@ -101,8 +101,13 @@ export function registerGoogleAuthRoutes(app: Express) {
     }
 
     const returnUrl = sanitizeReturnUrl(typeof req.query.return === 'string' ? req.query.return : undefined)
+    const inviteRaw = typeof req.query.invite === 'string' ? req.query.invite.trim() : ''
     const state = randomBytes(24).toString('hex')
-    pending.set(state, { returnUrl, expiresAt: Date.now() + PENDING_TTL_MS })
+    pending.set(state, {
+      returnUrl,
+      expiresAt: Date.now() + PENDING_TTL_MS,
+      inviteToken: inviteRaw || undefined,
+    })
 
     const scope = encodeURIComponent('openid email profile')
     const url =
@@ -167,12 +172,16 @@ export function registerGoogleAuthRoutes(app: Express) {
         return returnWithError(returnUrl, 'incomplete_profile', 'Perfil de Google incompleto.')
       }
 
-      const session = await prismaLoginWithGoogle(prisma, {
-        sub,
-        email,
-        emailVerified,
-        name,
-      })
+      const session = await prismaLoginWithGoogle(
+        prisma,
+        {
+          sub,
+          email,
+          emailVerified,
+          name,
+        },
+        pendingRow.inviteToken ? { rawInviteToken: pendingRow.inviteToken } : undefined
+      )
 
       const u = new URL(returnUrl)
       u.hash =

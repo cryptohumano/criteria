@@ -44,11 +44,15 @@ export function QuickActionsGrid() {
   ]
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4 lg:gap-5 xl:gap-6">
       {actions.map((action) => {
         const Icon = action.icon
         return (
-          <Card key={action.href} className={action.primary ? 'border-primary/20 bg-primary/5' : ''}>
+          <Card
+            key={action.href}
+            className={action.primary ? 'border-primary/20 bg-primary/5' : ''}
+            {...(action.href === '/documents' ? { 'data-tour-id': 'tour-home-documents-card' as const } : {})}
+          >
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Icon className={`h-5 w-5 ${action.primary ? 'text-primary' : ''}`} />

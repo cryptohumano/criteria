@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useKeyringContext } from '@/contexts/KeyringContext'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 import Onboarding from '@/pages/Onboarding'
 import { Unlock } from './Unlock'

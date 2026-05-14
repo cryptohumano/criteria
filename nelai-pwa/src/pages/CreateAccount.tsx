@@ -292,7 +292,7 @@ export default function CreateAccount() {
             {hasStoredAccounts && (
               <Alert>
                 <AlertDescription>
-                  <strong>Importante:</strong> En Nelai, todas las cuentas guardadas comparten una sola contraseña de wallet. Esto evita
+                  <strong>Importante:</strong> En criterIA, todas las cuentas guardadas comparten una sola contraseña de wallet. Esto evita
                   inconsistencias donde “solo funciona la última contraseña”.
                 </AlertDescription>
               </Alert>

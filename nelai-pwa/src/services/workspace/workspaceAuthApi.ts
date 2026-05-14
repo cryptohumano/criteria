@@ -54,7 +54,8 @@ function demoSession(
 
 export async function loginWithPassword(
   email: string,
-  password: string
+  password: string,
+  opts?: { inviteToken?: string }
 ): Promise<WorkspaceSession> {
   if (!hasWorkspaceApiBase()) {
     if (password.length < 4) {
@@ -72,7 +73,11 @@ export async function loginWithPassword(
   const res = await fetch(`${base}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email.trim(), password }),
+    body: JSON.stringify({
+      email: email.trim(),
+      password,
+      ...(opts?.inviteToken?.trim() ? { inviteToken: opts.inviteToken.trim() } : {}),
+    }),
   })
   const data = (await res.json().catch(() => ({}))) as AuthSuccessBody
   if (!res.ok) {
@@ -95,6 +100,8 @@ export type RegisterWorkspaceInput = {
    * Por defecto, si se envía `organizationName` no vacío, se trata como team.
    */
   accountKind?: 'team' | 'personal'
+  /** Invitación a una organización existente (`/register?invite=…`). */
+  inviteToken?: string
 }
 
 /** URL absoluta de callback OAuth (respeta `import.meta.env.BASE_URL`). */
@@ -108,11 +115,13 @@ export function buildGoogleOAuthReturnUrl(): string {
  * URL del API para iniciar OAuth Google (`return` validado en servidor con `AUTH_FRONTEND_ORIGIN`).
  * `null` si no hay backend configurado.
  */
-export function getGoogleOAuthStartUrl(): string | null {
+export function getGoogleOAuthStartUrl(inviteToken?: string): string | null {
   if (!hasWorkspaceApiBase()) return null
   const returnUrl = buildGoogleOAuthReturnUrl()
   const base = getApiBaseUrl()
-  const path = `/api/auth/google/start?return=${encodeURIComponent(returnUrl)}`
+  const trimmedInvite = inviteToken?.trim()
+  const inviteQ = trimmedInvite ? `&invite=${encodeURIComponent(trimmedInvite)}` : ''
+  const path = `/api/auth/google/start?return=${encodeURIComponent(returnUrl)}${inviteQ}`
   if (base) return `${base}${path}`
   return path
 }
@@ -146,7 +155,11 @@ export type RegisterWorkspaceResult =
   | { pendingVerification: true; email: string }
 
 export async function registerWorkspace(input: RegisterWorkspaceInput): Promise<RegisterWorkspaceResult> {
-  const { email, password, displayName, organizationName, accountKind } = input
+  const { email, password, displayName, organizationName, accountKind, inviteToken } = input
+
+  if (inviteToken?.trim() && !hasWorkspaceApiBase()) {
+    throw new Error('Las invitaciones requieren API configurada (VITE_API_BASE_URL).')
+  }
 
   if (!hasWorkspaceApiBase()) {
     if (password.length < 4) {
@@ -174,6 +187,7 @@ export async function registerWorkspace(input: RegisterWorkspaceInput): Promise<
   if (displayName?.trim()) body.displayName = displayName.trim()
   if (organizationName?.trim()) body.organizationName = organizationName.trim()
   if (accountKind) body.accountKind = accountKind
+  if (inviteToken?.trim()) body.inviteToken = inviteToken.trim()
 
   const res = await fetch(`${base}/api/auth/register`, {
     method: 'POST',

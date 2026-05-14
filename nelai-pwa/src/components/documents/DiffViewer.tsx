@@ -25,7 +25,12 @@ export default function DiffViewer({ oldValue, newValue, className }: DiffViewer
   const diff = diffWordsWithSpace(cleanOld, cleanNew)
 
   return (
-    <div className={cn("whitespace-pre-wrap font-sans text-sm leading-relaxed", className)}>
+    <div
+      className={cn(
+        'min-w-0 max-w-full whitespace-pre-wrap break-words font-sans text-sm leading-relaxed [overflow-wrap:anywhere]',
+        className,
+      )}
+    >
       {diff.map((part, index) => {
         const color = part.added 
           ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 

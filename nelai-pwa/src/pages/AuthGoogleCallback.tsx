@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { fetchWorkspaceSessionWithAccessToken } from '@/services/workspace/workspaceAuthApi'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 

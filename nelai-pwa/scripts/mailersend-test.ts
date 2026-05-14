@@ -28,8 +28,8 @@ if (!to) {
 
 try {
   const out = await sendMailerSendEmail({
-    to: { email: to, name: 'Prueba Nelai' },
-    subject: '[Nelai] Prueba MailerSend',
+    to: { email: to, name: 'Prueba criterIA' },
+    subject: '[criterIA] Prueba MailerSend',
     text: 'Si lees esto, el API token y el remitente están bien configurados.',
     html: '<p>Si lees esto, el <strong>API token</strong> y el remitente están bien configurados.</p>',
   })

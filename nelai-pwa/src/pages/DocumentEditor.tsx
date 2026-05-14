@@ -2,8 +2,8 @@
  * Página para editar documentos antes de generar PDF
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +23,7 @@ import {
 // @ts-expect-error Subpath export (tipos del paquete no siempre lo incluyen)
 import { addControls } from 'quill/modules/toolbar.js'
 import { DocumentEditorAgent } from '@/components/documents/DocumentEditorAgent'
+import { ResearchEvidenceLogTable } from '@/components/documents/ResearchEvidenceLogTable'
 import DiffViewer from '@/components/documents/DiffViewer'
 import { DocumentHeadingOutline } from '@/components/documents/DocumentHeadingOutline'
 import { DocumentEditorPdfPreview } from '@/components/documents/DocumentEditorPdfPreview'
@@ -40,14 +41,20 @@ import {
   PanelTopClose,
   PanelTop,
   History,
+  BookMarked,
   RotateCcw,
   Eye,
   GitCompare,
   Shield,
   ListTree,
   PanelLeftClose,
+  Loader2,
 } from 'lucide-react'
-import type { DocumentType, PrivacyPlaceholderEntry } from '@/types/documents'
+import type {
+  DocumentType,
+  PrivacyPlaceholderEntry,
+  ResearchEvidenceLogEntry,
+} from '@/types/documents'
 import type { PiiReviewRow } from '@/services/privacy/piiTypes'
 import { encryptDocument } from '@/services/documents/DocumentEncryptor'
 import Identicon from '@polkadot/react-identicon'
@@ -58,8 +65,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useDocumentEditorLayout } from '@/contexts/DocumentEditorLayoutContext'
+import { QuickIdentitySetupDialog } from '@/components/workspace/QuickIdentitySetupDialog'
+import { SpotlightTour } from '@/components/help/SpotlightTour'
 import { cn } from '@/lib/utils'
 import { quillRichTextDebug } from '@/lib/quillRichTextDebug'
 import type { PiiMatch } from '@/services/privacy/piiTypes'
@@ -84,6 +94,12 @@ import {
   formatUserTagsInput,
   parseUserTagsInput,
 } from '@/utils/documentListing'
+import {
+  appendResearchEvidenceEntries,
+  downloadResearchEvidenceCsv,
+  downloadResearchEvidenceJson,
+  normalizeResearchEvidenceLog,
+} from '@/utils/researchEvidenceLog'
 
 /** Texto plano alineado con el estado React del editor (Quill puede ir un tick detrás). */
 function plainTextFromHtml(html: string): string {
@@ -105,12 +121,45 @@ function autosaveFingerprint(title: string, html: string) {
 
 const AUTOSAVE_INTERVAL_MS = 45_000
 
+/** Bitácora de fuentes antes del primer guardado (ruta sin `documentId`). Se fusiona en IndexedDB al guardar. */
+const RESEARCH_EVIDENCE_SESSION_PREFIX = 'nelai-pwa:researchEvidencePending:'
+
+/** Chat del editor sin `documentId` en la ruta: sobrevive a recarga hasta el primer guardado. */
+const CHAT_SESSION_PREFIX = 'nelai-pwa:docEditorChatPending:'
+
+function readResearchEvidenceSession(binder: string): ResearchEvidenceLogEntry[] {
+  try {
+    const raw = sessionStorage.getItem(`${RESEARCH_EVIDENCE_SESSION_PREFIX}${binder}`)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as ResearchEvidenceLogEntry[]) : []
+  } catch {
+    return []
+  }
+}
+
 export default function DocumentEditor() {
   const { documentId } = useParams<{ documentId: string }>()
+  const pendingEvidenceBinderRef = useRef<string | null>(null)
+  const evidenceBinderId =
+    documentId ??
+    (pendingEvidenceBinderRef.current ??=
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`)
   const navigate = useNavigate()
-  const { accounts } = useKeyringContext()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { accounts, isUnlocked, hasStoredAccounts, isReady } = useKeyringContext()
   const { activeAccount } = useActiveAccount()
   const layoutCtx = useDocumentEditorLayout()
+
+  const entryIntentInitial = useMemo(() => {
+    if (documentId) return null
+    const v = (searchParams.get('intent') || '').trim().toLowerCase()
+    if (v === 'contract') return 'contract' as const
+    if (v === 'academic') return 'academic' as const
+    return null
+  }, [documentId, searchParams])
 
   const [isEditing] = useState(!!documentId)
   const [loading, setLoading] = useState(!!documentId)
@@ -129,8 +178,15 @@ export default function DocumentEditor() {
   const [encryptDialogOpen, setEncryptDialogOpen] = useState(false)
   const [metadataModalOpen, setMetadataModalOpen] = useState(false)
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
-  const [agentOpen, setAgentOpen] = useState(false)
-  const [agentProfile, setAgentProfile] = useState<AgentProfile>('academic_es')
+  const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
+  const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
+  const [agentOpen, setAgentOpen] = useState(() => entryIntentInitial !== null)
+  const [agentProfile, setAgentProfile] = useState<AgentProfile>(() =>
+    entryIntentInitial === 'contract' ? 'legal_mx' : 'academic_es',
+  )
+  const [agentInitialSubView] = useState<'chat' | 'privacy'>(() =>
+    entryIntentInitial === 'contract' ? 'privacy' : 'chat',
+  )
   const [updatingAgentProfile, setUpdatingAgentProfile] = useState(false)
   const [userTagsLine, setUserTagsLine] = useState('')
   const [chatHistory, setChatHistory] = useState<any[]>([])
@@ -141,6 +197,54 @@ export default function DocumentEditor() {
   useEffect(() => {
     chatHistoryRef.current = chatHistory
   }, [chatHistory])
+
+  const chatDraftReadyRef = useRef(false)
+
+  /** Restaurar chat antes del paint para no pisar sessionStorage con `[]` del primer render. */
+  useLayoutEffect(() => {
+    chatDraftReadyRef.current = false
+    if (documentId) {
+      chatDraftReadyRef.current = true
+      return
+    }
+    const b = pendingEvidenceBinderRef.current
+    if (!b) {
+      chatDraftReadyRef.current = true
+      return
+    }
+    try {
+      const raw = sessionStorage.getItem(`${CHAT_SESSION_PREFIX}${b}`)
+      if (!raw) {
+        chatDraftReadyRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        chatDraftReadyRef.current = true
+        return
+      }
+      setChatHistory(parsed)
+      setChatSessionKey((k) => k + 1)
+    } catch {
+      /* ignore */
+    } finally {
+      chatDraftReadyRef.current = true
+    }
+  }, [documentId])
+
+  /** Sin `documentId`, persistir hilo en sessionStorage (misma clave que la bitácora pendiente). */
+  useEffect(() => {
+    if (documentId) return
+    if (!chatDraftReadyRef.current) return
+    const b = pendingEvidenceBinderRef.current
+    if (!b) return
+    try {
+      sessionStorage.setItem(`${CHAT_SESSION_PREFIX}${b}`, JSON.stringify(chatHistory))
+    } catch {
+      /* ignore quota */
+    }
+  }, [chatHistory, documentId])
+
   const [versions, setVersions] = useState<any[]>([])
   const [appliedMods, setAppliedMods] = useState<Record<string, number>>({})
   const [previewVersion, setPreviewVersion] = useState<any | null>(null)
@@ -159,6 +263,28 @@ export default function DocumentEditor() {
     setIsLgUp(mq.matches)
     return () => mq.removeEventListener('change', onChange)
   }, [])
+
+  const entryIntentHandledRef = useRef(false)
+  /** Entrada desde inicio (?intent=): limpiar URL y orientar al usuario. */
+  useEffect(() => {
+    if (documentId || entryIntentHandledRef.current) return
+    const v = (searchParams.get('intent') || '').trim().toLowerCase()
+    if (v !== 'contract' && v !== 'academic') return
+    entryIntentHandledRef.current = true
+    if (v === 'contract') {
+      toast.message('Analizar contrato', {
+        description:
+          'Editor local con perfil Legal MX. La pestaña Privacidad del agente está abierta: revisa datos personales (manual o asistido) antes de enviar a la IA. Puedes adjuntar un PDF para extraer texto con revisión.',
+      })
+    } else {
+      toast.message('Documento académico', {
+        description:
+          'Editor local con perfil académico y el agente listo: pega el texto o adjunta PDF/imagen y escribe tu pregunta en el chat.',
+      })
+    }
+    setSearchParams({}, { replace: true })
+  }, [documentId, searchParams, setSearchParams])
+
   const [savedContent, setSavedContent] = useState('')
   const editorApiRef = useRef<EditorApi | null>(null)
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null)
@@ -391,23 +517,115 @@ export default function DocumentEditor() {
 
   useEffect(() => {
     if (!documentId) return
-    // Persistir historial del chat (incluso vacío) en IndexedDB
-    getDocument(documentId).then((doc) => {
-      if (doc) {
-        updateDocument(documentId, { ...doc, chatHistory, updatedAt: Date.now() })
-      }
-    })
+    /** Solo campos a fusionar: evita pisar el documento con un `getDocument` obsoleto (p. ej. tras Guardar). */
+    void updateDocument(documentId, { chatHistory })
   }, [chatHistory, documentId])
 
   const flushChatToStorage = useCallback(() => {
     if (!documentId) return
     const latest = chatHistoryRef.current
-    getDocument(documentId).then((doc) => {
-      if (doc) {
-        updateDocument(documentId, { ...doc, chatHistory: latest, updatedAt: Date.now() })
-      }
-    })
+    void updateDocument(documentId, { chatHistory: latest })
   }, [documentId])
+
+  const mergePendingResearchEvidenceFromSession = useCallback(async (realDocumentId: string) => {
+    const binder = pendingEvidenceBinderRef.current
+    if (!binder || binder === realDocumentId) return
+    const key = `${RESEARCH_EVIDENCE_SESSION_PREFIX}${binder}`
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return
+    sessionStorage.removeItem(key)
+    let pending: ResearchEvidenceLogEntry[]
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed) || parsed.length === 0) return
+      pending = parsed as ResearchEvidenceLogEntry[]
+    } catch {
+      return
+    }
+    const remapped = pending.map((e) => ({ ...e, documentId: realDocumentId }))
+    try {
+      const doc = await getDocument(realDocumentId)
+      if (!doc) return
+      const merged = appendResearchEvidenceEntries(doc.researchEvidenceLog, remapped)
+      await updateDocument(realDocumentId, { researchEvidenceLog: merged })
+      setResearchEvidenceLog(merged)
+    } catch (e) {
+      console.error('[Document Editor] fusionar bitácora pendiente', e)
+    }
+  }, [])
+
+  const appendResearchEvidenceFromAgent = useCallback(
+    async (entries: ResearchEvidenceLogEntry[]) => {
+      if (!entries.length) return
+      const binder = documentId ?? pendingEvidenceBinderRef.current
+      if (!binder) return
+      try {
+        if (documentId) {
+          const doc = await getDocument(documentId)
+          if (!doc) return
+          const merged = appendResearchEvidenceEntries(doc.researchEvidenceLog, entries)
+          await updateDocument(documentId, { researchEvidenceLog: merged })
+          setResearchEvidenceLog(merged)
+        } else {
+          const prev = readResearchEvidenceSession(binder)
+          const merged = appendResearchEvidenceEntries(prev, entries)
+          sessionStorage.setItem(`${RESEARCH_EVIDENCE_SESSION_PREFIX}${binder}`, JSON.stringify(merged))
+          setResearchEvidenceLog(merged)
+        }
+      } catch (e) {
+        console.error('[Document Editor] bitácora de fuentes', e)
+      }
+    },
+    [documentId],
+  )
+
+  const persistEvidenceUserComment = useCallback(
+    async (entryId: string, userComment: string) => {
+      const binder = documentId ?? pendingEvidenceBinderRef.current
+      if (!binder) return
+      const apply = (log: ResearchEvidenceLogEntry[] | undefined) =>
+        normalizeResearchEvidenceLog(log).map((e) => (e.id === entryId ? { ...e, userComment } : e))
+      try {
+        if (documentId) {
+          const doc = await getDocument(documentId)
+          if (!doc) return
+          const merged = apply(doc.researchEvidenceLog)
+          await updateDocument(documentId, { researchEvidenceLog: merged })
+          setResearchEvidenceLog(merged)
+        } else {
+          const prev = readResearchEvidenceSession(binder)
+          const merged = apply(prev)
+          sessionStorage.setItem(`${RESEARCH_EVIDENCE_SESSION_PREFIX}${binder}`, JSON.stringify(merged))
+          setResearchEvidenceLog(merged)
+        }
+      } catch (e) {
+        console.error('[Document Editor] nota en bitácora', e)
+        toast.error('No se pudo guardar la nota')
+      }
+    },
+    [documentId],
+  )
+
+  useEffect(() => {
+    if (!documentId) {
+      const b = pendingEvidenceBinderRef.current
+      if (!b) return
+      const pending = normalizeResearchEvidenceLog(readResearchEvidenceSession(b))
+      if (pending.length) setResearchEvidenceLog(pending)
+    }
+  }, [documentId])
+
+  useEffect(() => {
+    if (!sourcesModalOpen) return
+    if (documentId) {
+      void getDocument(documentId).then((d) => {
+        if (d) setResearchEvidenceLog(normalizeResearchEvidenceLog(d.researchEvidenceLog))
+      })
+      return
+    }
+    const b = pendingEvidenceBinderRef.current
+    if (b) setResearchEvidenceLog(normalizeResearchEvidenceLog(readResearchEvidenceSession(b)))
+  }, [sourcesModalOpen, documentId])
 
   const handleAgentOpenChange = useCallback(
     (open: boolean) => {
@@ -488,6 +706,7 @@ export default function DocumentEditor() {
       setSavedContent(initialContent)
       setEncrypt(doc.encrypted || false)
       setChatHistory(doc.chatHistory || [])
+      setResearchEvidenceLog(normalizeResearchEvidenceLog(doc.researchEvidenceLog))
       setChatSessionKey((k) => k + 1)
       setAppliedMods(doc.appliedMods || {})
       setVersions(doc.versions || [])
@@ -586,6 +805,8 @@ export default function DocumentEditor() {
         finalDocument = await updateDocumentContent(finalDocument.documentId, {
           content: pdfContent,
           metadata: finalDocument.metadata,
+          chatHistory,
+          appliedMods,
           privacyPlaceholderRegistry: placeholderRegistry,
           saveVersion: true,
           changeDescription: 'Versión inicial'
@@ -593,6 +814,16 @@ export default function DocumentEditor() {
         setContent(pdfContent)
         setSavedContent(pdfContent)
         setVersions(finalDocument.versions || [])
+      }
+
+      await mergePendingResearchEvidenceFromSession(finalDocument.documentId)
+      const draftBinder = pendingEvidenceBinderRef.current
+      if (draftBinder && draftBinder !== finalDocument.documentId) {
+        try {
+          sessionStorage.removeItem(`${CHAT_SESSION_PREFIX}${draftBinder}`)
+        } catch {
+          /* */
+        }
       }
 
       // Encriptar si se solicita
@@ -695,6 +926,7 @@ export default function DocumentEditor() {
   }, [])
 
   const [docStats, setDocStats] = useState({ chars: 0, pages: 1 })
+  const [editorTourOpen, setEditorTourOpen] = useState(false)
   const [toolbarHostEl, setToolbarHostEl] = useState<HTMLDivElement | null>(null)
   /** Incrementar al desmontar Quill para forzar DOM nuevo de la toolbar (Quill no quita listeners del host externo). */
   const [toolbarHostCycle, setToolbarHostCycle] = useState(0)
@@ -728,9 +960,135 @@ export default function DocumentEditor() {
     setToolbarHostEl(el)
   }, [])
 
+  const needsIdentityGate =
+    !documentId && isReady && (accounts.length === 0 || (hasStoredAccounts && !isUnlocked))
+
+  const editorQuillTourSteps = useMemo(() => {
+    type Step = { id: string; title: string; body: string; selector: string }
+    const steps: Step[] = [
+      {
+        id: 'q-menu',
+        title: 'Menú lateral',
+        body:
+          'Abre la navegación de la app (Inicio, Documentos, Ajustes) sin salir del editor.',
+        selector: '[data-tour-id="tour-quill-menu"]',
+      },
+      {
+        id: 'q-back',
+        title: 'Volver',
+        body: 'Regresa al listado de documentos.',
+        selector: '[data-tour-id="tour-quill-back"]',
+      },
+      {
+        id: 'q-profile',
+        title: 'Perfil del agente',
+        body:
+          'Modo Académico o Legal MX: orienta al asistente y a las etiquetas de dominio del documento.',
+        selector: '[data-tour-id="tour-quill-agent-profile"]',
+      },
+      {
+        id: 'q-agent',
+        title: 'Asistente (chat y PII)',
+        body:
+          'Abre el panel lateral con el chat del agente, revisión de PII y privacidad. También puedes adjuntar archivos según el flujo.',
+        selector: '[data-tour-id="tour-quill-agent-open"]',
+      },
+      {
+        id: 'q-info',
+        title: 'Información del documento',
+        body: 'Metadatos, etiquetas, formato de papel y opciones como cifrado.',
+        selector: '[data-tour-id="tour-quill-doc-info"]',
+      },
+      {
+        id: 'q-history',
+        title: 'Historial de versiones',
+        body:
+          'Lista de versiones guardadas: compara, previsualiza y restaura contenido anterior.',
+        selector: '[data-tour-id="tour-quill-history"]',
+      },
+      {
+        id: 'q-diff',
+        title: 'Cambios en vivo',
+        body:
+          'Compara el borrador actual frente al último guardado sin salir del documento (vista diff).',
+        selector: '[data-tour-id="tour-quill-live-diff"]',
+      },
+      {
+        id: 'q-collapse',
+        title: 'Compactar barra',
+        body:
+          'Oculta título y acciones de la barra superior para ganar espacio; el guardado sigue disponible abajo.',
+        selector: '[data-tour-id="tour-quill-collapse-header"]',
+      },
+      {
+        id: 'q-save',
+        title: 'Guardar',
+        body:
+          'Genera o actualiza el PDF en este dispositivo y crea una entrada en el historial de versiones.',
+        selector: '[data-tour-id="tour-quill-save"]',
+      },
+      {
+        id: 'q-toolbar',
+        title: 'Formato (Quill)',
+        body:
+          'Negrita, listas, encabezados, etc. El botón del mapa y «Placeholder» ayudan a la estructura y a sustituir selección por tokens de privacidad.',
+        selector: '[data-tour-id="tour-quill-format-toolbar"]',
+      },
+      {
+        id: 'q-editor',
+        title: 'Área de edición',
+        body: 'Contenido del documento con vista previa PDF debajo (misma composición que al guardar).',
+        selector: '[data-tour-id="tour-quill-editor-page"]',
+      },
+      {
+        id: 'q-preview',
+        title: 'Vista previa PDF',
+        body: 'Previsualiza cómo quedará el PDF exportado con el formato de papel elegido.',
+        selector: '[data-tour-id="tour-quill-pdf-preview"]',
+      },
+    ]
+    return steps
+  }, [])
+
+  /** Primera vez en el editor Quill: tour de la barra, formato y vista previa. */
+  useEffect(() => {
+    if (loading || needsIdentityGate) return
+    let cancelled = false
+    try {
+      const seen =
+        localStorage.getItem('criteria.help.tour.editorQuill.v1.seen') === '1' ||
+        localStorage.getItem('nelai.help.tour.editorQuill.v1.seen') === '1'
+      if (seen) return
+    } catch {
+      return
+    }
+    const t = window.setTimeout(() => {
+      if (!cancelled) setEditorTourOpen(true)
+    }, 550)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [loading, needsIdentityGate, documentId])
+
+  useEffect(() => {
+    const onReplay = () => setEditorTourOpen(true)
+    window.addEventListener('criteria-replay-quill-spotlight', onReplay)
+    return () => window.removeEventListener('criteria-replay-quill-spotlight', onReplay)
+  }, [])
+
+  if (!documentId && !isReady) {
+    return (
+      <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        Preparando entorno seguro…
+      </div>
+    )
+  }
+
   if (loading) {
     return (
-      <div className="container mx-auto p-4">
+      <div className="flex min-h-[400px] items-center justify-center p-4">
         <div className="flex items-center justify-center min-h-[400px]">
           <p className="text-muted-foreground">Cargando documento...</p>
         </div>
@@ -743,6 +1101,7 @@ export default function DocumentEditor() {
 
   return (
     <>
+      <QuickIdentitySetupDialog open={needsIdentityGate} />
     <div
       className={cn(
         'fixed top-0 bottom-0 z-10 flex flex-col bg-background left-0 right-0',
@@ -761,6 +1120,7 @@ export default function DocumentEditor() {
           onClick={() => layoutCtx?.toggleSidebar()}
           className="flex-shrink-0 h-8 w-8"
           title="Mostrar menú"
+          data-tour-id="tour-quill-menu"
         >
           <Menu className="h-4 w-4" />
         </Button>
@@ -770,6 +1130,7 @@ export default function DocumentEditor() {
           onClick={() => navigate('/documents')}
           className="flex-shrink-0 h-8 w-8"
           title="Volver"
+          data-tour-id="tour-quill-back"
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -786,7 +1147,7 @@ export default function DocumentEditor() {
                 {isEditing ? 'Editar' : 'Nuevo documento'}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-1.5 max-w-[min(100%,220px)] sm:max-w-[260px]">
+            <div className="flex shrink-0 items-center gap-1.5 max-w-[min(100%,220px)] sm:max-w-[260px]" data-tour-id="tour-quill-agent-profile">
               <Select
                 value={agentProfile}
                 onValueChange={(v) => void persistAgentProfile(v as AgentProfile)}
@@ -811,6 +1172,7 @@ export default function DocumentEditor() {
               onClick={() => setAgentOpen(true)}
               className="flex-shrink-0 h-8 w-8"
               title="Asistente IA"
+              data-tour-id="tour-quill-agent-open"
             >
               <Bot className="h-4 w-4" />
             </Button>
@@ -820,6 +1182,7 @@ export default function DocumentEditor() {
               onClick={() => setMetadataModalOpen(true)}
               className="flex-shrink-0 h-8 w-8"
               title="Información"
+              data-tour-id="tour-quill-doc-info"
             >
               <Info className="h-4 w-4" />
             </Button>
@@ -829,8 +1192,18 @@ export default function DocumentEditor() {
               onClick={() => setHistoryModalOpen(true)}
               className="flex-shrink-0 h-8 w-8"
               title="Historial de cambios"
+              data-tour-id="tour-quill-history"
             >
               <History className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSourcesModalOpen(true)}
+              className="flex-shrink-0 h-8 w-8"
+              title="Bitácora de fuentes (URLs del agente)"
+            >
+              <BookMarked className="h-4 w-4" />
             </Button>
           </>
         )}
@@ -840,6 +1213,7 @@ export default function DocumentEditor() {
           onClick={() => setLiveDiffEnabled(!liveDiffEnabled)}
           className={`flex-shrink-0 h-8 w-8 ${liveDiffEnabled ? 'text-primary' : ''}`}
           title={liveDiffEnabled ? "Ocultar cambios en vivo" : "Ver cambios en vivo (Diff)"}
+          data-tour-id="tour-quill-live-diff"
         >
           <GitCompare className="h-4 w-4" />
         </Button>
@@ -849,6 +1223,7 @@ export default function DocumentEditor() {
           onClick={() => layoutCtx?.toggleHeader()}
           className="flex-shrink-0 h-8 w-8"
           title={headerCollapsed ? 'Mostrar barra' : 'Ocultar barra'}
+          data-tour-id="tour-quill-collapse-header"
         >
           {headerCollapsed ? (
             <PanelTop className="h-4 w-4" />
@@ -861,7 +1236,7 @@ export default function DocumentEditor() {
             <Button variant="outline" size="sm" onClick={() => navigate('/documents')}>
               Cancelar
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Button size="sm" onClick={handleSave} disabled={saving} data-tour-id="tour-quill-save">
               <Save className="h-4 w-4 mr-1" />
               {saving ? '...' : 'Guardar'}
             </Button>
@@ -874,7 +1249,7 @@ export default function DocumentEditor() {
         <div className="flex min-h-0 flex-1 min-w-0 flex-col bg-muted/40 transition-all duration-300 ease-in-out">
           {/* Barra de formato: sin overflow-hidden aquí para que los pickers de Quill no se recorten */}
           {!liveDiffEnabled && (
-            <div className="relative z-30 flex shrink-0 items-stretch gap-0 border-b border-border bg-background">
+            <div className="relative z-30 flex shrink-0 items-stretch gap-0 border-b border-border bg-background" data-tour-id="tour-quill-format-toolbar">
               <div
                 id={DOCUMENT_EDITOR_QUILL_TOOLBAR_ID}
                 key={`toolbar-${documentId ?? 'new'}-${toolbarHostCycle}`}
@@ -962,10 +1337,10 @@ export default function DocumentEditor() {
             )}
             <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
               <div className="mx-auto flex min-h-full w-full max-w-full flex-col p-4 sm:p-6 lg:p-8">
-                <div className="mx-auto mb-8 flex min-h-[min(1056px,100%)] w-full max-w-[850px] flex-1 flex-col rounded-sm border bg-background p-4 shadow-xl sm:p-12">
+                <div className="mx-auto mb-8 flex min-h-[min(1056px,100%)] w-full max-w-[850px] flex-1 flex-col rounded-sm border bg-background p-4 shadow-xl sm:p-12" data-tour-id="tour-quill-editor-page">
                 {liveDiffEnabled ? (
-                  <div className="min-h-[300px]">
-                    <div className="mb-4 flex items-center justify-between border-b pb-2">
+                  <div className="min-h-[280px] min-w-0 max-w-full overflow-auto rounded-md border border-border/70 bg-muted/15 p-4">
+                    <div className="mb-4 flex items-center justify-between border-b border-border/80 pb-2">
                       <h3 className="flex items-center gap-2 text-sm font-bold">
                         <GitCompare className="h-4 w-4" />
                         Cambios sin guardar
@@ -998,6 +1373,7 @@ export default function DocumentEditor() {
                       paperFormat={paperFormat}
                       className="flex min-h-0 flex-1 flex-col border-0"
                     />
+                    <div data-tour-id="tour-quill-pdf-preview">
                     <DocumentEditorPdfPreview
                       html={content}
                       title={title}
@@ -1005,6 +1381,7 @@ export default function DocumentEditor() {
                       author={selectedAccount}
                       paperFormat={paperFormat}
                     />
+                    </div>
                   </>
                 )}
                 </div>
@@ -1016,7 +1393,7 @@ export default function DocumentEditor() {
               <Button variant="outline" size="sm" onClick={() => navigate('/documents')}>
                 Cancelar
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={saving}>
+              <Button size="sm" onClick={handleSave} disabled={saving} data-tour-id="tour-quill-save">
                 <Save className="mr-1 h-4 w-4" />
                 {saving ? '...' : 'Guardar'}
               </Button>
@@ -1040,7 +1417,7 @@ export default function DocumentEditor() {
         {/* Agente: siempre montado para conservar el hilo al cerrar el panel; oculto cuando no está abierto */}
         <aside
           className={cn(
-            'w-full lg:w-[500px] border-l bg-background flex-col shadow-2xl z-40 shrink-0',
+            'w-full min-w-0 lg:w-[500px] border-l bg-background flex-col shadow-2xl z-40 shrink-0',
             agentOpen ? 'flex animate-in slide-in-from-right duration-300' : 'hidden'
           )}
         >
@@ -1048,7 +1425,9 @@ export default function DocumentEditor() {
               open={agentOpen}
               onOpenChange={handleAgentOpenChange}
               documentId={documentId}
+              evidenceDocumentId={evidenceBinderId}
               chatSessionKey={chatSessionKey}
+              initialSubView={agentInitialSubView}
               initialMessages={chatHistory}
               appliedMods={appliedMods}
               onAppliedModsChange={setAppliedMods}
@@ -1063,6 +1442,8 @@ export default function DocumentEditor() {
                   })),
                 )
               }}
+              onResearchEvidenceAppend={appendResearchEvidenceFromAgent}
+              researchEvidenceAddedBy={selectedAccount}
               documentContext={{
                 title,
                 type,
@@ -1284,13 +1665,70 @@ export default function DocumentEditor() {
         </DialogContent>
       </Dialog>
 
+      {/* Bitácora de fuentes (URLs persistidas con el documento) */}
+      <Dialog open={sourcesModalOpen} onOpenChange={setSourcesModalOpen}>
+        <DialogContent className="flex min-h-0 max-h-[88vh] max-w-[min(100vw-1rem,1180px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(100vw-1rem,1180px)]">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <BookMarked className="h-5 w-5 text-primary" />
+              Bitácora de fuentes
+            </DialogTitle>
+            <DialogDescription>
+              URLs registradas desde el chat del agente (mensajes usuario y asistente, citas de búsqueda). Se guardan en
+              este documento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => downloadResearchEvidenceJson(researchEvidenceLog, documentId || 'documento')}
+            >
+              Exportar JSON
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => downloadResearchEvidenceCsv(researchEvidenceLog, documentId || 'documento')}
+            >
+              Exportar CSV
+            </Button>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {researchEvidenceLog.length} entrada{researchEvidenceLog.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col bg-muted/15">
+            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable] [scrollbar-width:thin] [scrollbar-color:hsl(var(--muted-foreground)/0.35)_transparent] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/30 [&::-webkit-scrollbar-track]:bg-transparent">
+              {researchEvidenceLog.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Aún no hay fuentes registradas. Envía mensajes con enlaces http(s) en el agente o usa un modelo con
+                  citas web.
+                </p>
+              ) : (
+                <ResearchEvidenceLogTable
+                  entries={[...researchEvidenceLog].reverse()}
+                  onPersistUserComment={persistEvidenceUserComment}
+                />
+              )}
+            </div>
+            <div className="flex shrink-0 justify-end border-t border-border/60 px-4 py-3">
+              <Button variant="ghost" size="sm" onClick={() => setSourcesModalOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de Historial */}
       <Dialog open={historyModalOpen} onOpenChange={(open) => {
         setHistoryModalOpen(open)
         if (!open) setPreviewVersion(null)
       }}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-2">
+        <DialogContent className="flex h-[min(90vh,900px)] w-[min(100vw-1rem,1200px)] max-w-[min(100vw-1rem,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(100vw-1rem,1200px)]">
+          <DialogHeader className="shrink-0 p-6 pb-2">
             <DialogTitle className="flex items-center gap-2 text-xl">
               <History className="h-6 w-6 text-primary" />
               Historial de versiones
@@ -1300,9 +1738,11 @@ export default function DocumentEditor() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 flex flex-col md:flex-row min-h-0 divide-y md:divide-y-0 md:divide-x border-t">
+          <div className="flex min-h-0 flex-1 flex-col divide-y overflow-hidden md:flex-row md:divide-x md:divide-y-0 border-t">
             {/* Lista de versiones */}
-            <div className="w-full md:w-72 overflow-y-auto p-4 space-y-3 bg-muted/20">
+            <div className="flex h-40 shrink-0 flex-col overflow-hidden md:h-auto md:w-80 md:shrink-0">
+              <ScrollArea className="h-full md:max-h-none">
+                <div className="space-y-3 bg-muted/20 p-4">
               {versions.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8 italic text-sm">
                   No hay versiones guardadas todavía.
@@ -1335,10 +1775,12 @@ export default function DocumentEditor() {
                   </button>
                 ))
               )}
+                </div>
+              </ScrollArea>
             </div>
 
             {/* Panel de previsualización */}
-            <div className="flex-1 flex flex-col min-h-0 bg-background">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
               {previewVersion ? (
                 <>
                   <div className="p-3 border-b bg-muted/5 flex items-center justify-between shrink-0">
@@ -1375,13 +1817,15 @@ export default function DocumentEditor() {
                       </Button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-6 bg-background custom-preview-container">
+                  <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto p-6 bg-background custom-preview-container">
                     {/* Renderizado del HTML de la versión o Diff */}
                     {showDiff ? (
-                      <DiffViewer oldValue={content} newValue={previewVersion.contentHtml || ''} />
+                      <div className="min-w-0 max-w-full">
+                        <DiffViewer oldValue={content} newValue={previewVersion.contentHtml || ''} />
+                      </div>
                     ) : (
-                      <div 
-                        className="text-foreground text-sm leading-relaxed"
+                      <div
+                        className="min-w-0 max-w-full break-words text-foreground text-sm leading-relaxed"
                         dangerouslySetInnerHTML={{ 
                           __html: previewVersion.contentHtml || 
                           `<div class="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -1421,6 +1865,22 @@ export default function DocumentEditor() {
           </div>
         </DialogContent>
       </Dialog>
+      <SpotlightTour
+        open={editorTourOpen}
+        onOpenChange={(v) => {
+          setEditorTourOpen(v)
+          if (!v) {
+            try {
+              localStorage.setItem('criteria.help.tour.editorQuill.v1.seen', '1')
+              localStorage.setItem('nelai.help.tour.editorQuill.v1.seen', '1')
+            } catch {
+              /* ignore */
+            }
+          }
+        }}
+        initialStepId={editorQuillTourSteps[0]?.id}
+        steps={editorQuillTourSteps}
+      />
     </>
   )
 }

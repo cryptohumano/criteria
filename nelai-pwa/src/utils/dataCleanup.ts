@@ -41,7 +41,7 @@ async function deleteIndexedDbByName(dbName: string): Promise<void> {
       }
       if (attempt === maxAttempts) {
         throw new Error(
-          `No se pudo eliminar IndexedDB "${dbName}". Cierra todas las pestañas de Nelai y vuelve a intentar.`,
+          `No se pudo eliminar IndexedDB "${dbName}". Cierra todas las pestañas de criterIA y vuelve a intentar.`,
         )
       }
       await new Promise((res) => setTimeout(res, 300 + attempt * 80))

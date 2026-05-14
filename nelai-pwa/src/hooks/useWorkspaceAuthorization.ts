@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { OrgMemberRole } from '@/types/workspace'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 
 const ORG_RANK: Record<OrgMemberRole, number> = {
   member: 0,

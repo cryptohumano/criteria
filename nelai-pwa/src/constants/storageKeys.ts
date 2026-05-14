@@ -5,7 +5,7 @@ export const CRITERIA_STORAGE = {
   activeAccount: 'criteria-active-account',
 } as const
 
-/** Claves legacy (Nelai) para migración/compatibilidad. */
+/** Claves legacy (nombre comercial anterior) para migración/compatibilidad. */
 export const LEGACY_NELAI_STORAGE = {
   apiConfigs: 'nelai-api-configs',
   contacts: 'nelai-contacts',

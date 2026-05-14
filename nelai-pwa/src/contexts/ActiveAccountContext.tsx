@@ -34,7 +34,7 @@ export function ActiveAccountProvider({ children }: { children: ReactNode }) {
         // Ojo: cuando el keyring está bloqueado, `accounts=[]` pero eso NO significa
         // que la cuenta guardada sea inválida. La validación real se hace al desbloquear.
         setActiveAccountState(stored)
-        // Migración: si venía de Nelai, persistir con la clave nueva.
+        // Migración: si venía de una versión anterior del producto, persistir con la clave nueva.
         localStorage.setItem(ACTIVE_ACCOUNT_STORAGE_KEY, stored)
         localStorage.removeItem(LEGACY_ACTIVE_ACCOUNT_STORAGE_KEY)
       } else if (isUnlocked && accounts.length > 0) {

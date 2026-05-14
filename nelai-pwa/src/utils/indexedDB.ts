@@ -749,7 +749,7 @@ export async function deleteDatabase(): Promise<void> {
         }
         r.onblocked = () => {
           console.warn(
-            `[IndexedDB Shared] ⚠️ Eliminación bloqueada (${attempt}/${maxAttempts}). Cerrando conexión local; cierra otras pestañas con Nelai si sigue bloqueado.`,
+            `[IndexedDB Shared] ⚠️ Eliminación bloqueada (${attempt}/${maxAttempts}). Cerrando conexión local; cierra otras pestañas con criterIA si sigue bloqueado.`,
           )
           void drainOpenPromiseAndCloseSharedDb()
         }

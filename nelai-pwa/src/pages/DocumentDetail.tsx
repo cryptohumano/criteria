@@ -308,32 +308,26 @@ export default function DocumentDetail() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-4">
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center text-muted-foreground">
-              Cargando documento...
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardContent className="py-12">
+          <div className="text-center text-muted-foreground">Cargando documento...</div>
+        </CardContent>
+      </Card>
     )
   }
 
   if (!document) {
     return (
-      <div className="container mx-auto p-4">
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <h3 className="text-lg font-semibold">Documento no encontrado</h3>
-              <Button className="mt-4" onClick={() => navigate('/documents')}>
-                Volver a Documentos
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardContent className="py-12">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold">Documento no encontrado</h3>
+            <Button className="mt-4" onClick={() => navigate('/documents')}>
+              Volver a Documentos
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -343,7 +337,7 @@ export default function DocumentDetail() {
     lastAgentScore && lastAgentScore.at > 0 ? lastAgentScore.at : document.updatedAt
 
   return (
-    <div className="container mx-auto p-3 sm:p-4 pb-6 sm:pb-8 space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6 pb-6 sm:pb-8">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:gap-4">
         <div className="flex items-center gap-2 sm:gap-4">

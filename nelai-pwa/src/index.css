@@ -7,7 +7,7 @@
 :root {
   --radius: 0.5rem;
 
-  /* Light Mode - Paleta Nelai (teal + índigo) */
+  /* Light Mode - Paleta criterIA (teal + índigo) */
   --background: 160 20% 98%;        /* Fondo neutro con tinte verde suave */
   --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;
@@ -63,7 +63,7 @@ body {
   }
 }
 
-/* Dark Mode - Paleta Nelai */
+/* Dark Mode - Paleta criterIA */
 .dark {
   --background: 222 47% 11%;
   --foreground: 210 40% 98%;

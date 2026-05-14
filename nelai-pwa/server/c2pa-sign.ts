@@ -17,10 +17,11 @@ import { getPrisma, isDatabaseConfigured } from './db.js'
 import { prismaRegister, prismaLogin } from './prisma-auth.js'
 import { registerGoogleAuthRoutes } from './routes/googleAuthRoutes.js'
 import { registerEmailVerificationRoutes } from './routes/emailVerificationRoutes.js'
-import type { RegisterBody } from './prisma-auth.js'
+import type { RegisterBody, LoginBody } from './prisma-auth.js'
 import { createPlatformRouter } from './routes/platformRouter.js'
 import { createPadsRouter } from './routes/padsRouter.js'
 import { createBillingRouter, createBillingWebhookHandler } from './routes/billingRouter.js'
+import { createOrgRouter } from './routes/orgRouter.js'
 import { createUsageRouter } from './routes/usageRouter.js'
 import { resolveServerGeminiApiKey } from './llm/resolveServerGeminiKey.js'
 import { corsMiddleware } from './middleware/cors.js'
@@ -221,6 +222,10 @@ app.post('/api/auth/register', authCredentialsLimiter, async (req, res) => {
         organization: out.organization,
       })
     }
+    const inviteTok = String((req.body as RegisterBody).inviteToken || '').trim()
+    if (inviteTok) {
+      return res.status(503).json({ error: 'Las invitaciones requieren base de datos (DATABASE_URL + Prisma).' })
+    }
     const { organizationName, email, password, displayName, accountKind } =
       (req.body as RegisterBody) || {}
     if (!email || !password) {
@@ -302,7 +307,7 @@ app.post('/api/auth/login', authCredentialsLimiter, async (req, res) => {
   }
   try {
     if (prisma) {
-      const out = await prismaLogin(prisma, req.body as { email?: string; password?: string })
+      const out = await prismaLogin(prisma, req.body as LoginBody)
       return res.json(out)
     }
     const { email, password } = (req.body as { email?: string; password?: string }) || {}
@@ -392,6 +397,7 @@ app.post('/api/auth/delete-account', authCredentialsLimiter, requireUser, handle
 app.use('/api/platform', createPlatformRouter(superadminGuard))
 app.use('/api/docs', createPadsRouter(requireUser))
 app.use('/api/billing', createBillingRouter(requireUser))
+app.use('/api/org', createOrgRouter(requireUser))
 
 app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
   llmRequestCount++

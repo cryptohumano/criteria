@@ -125,6 +125,55 @@ export interface ExternalSource {
   signatureDeadline?: number          // Fecha límite para firmar
 }
 
+/** Origen de un registro en la bitácora de fuentes (observabilidad). */
+export type ResearchEvidenceLogOrigin =
+  | 'user_message'
+  | 'assistant_message'
+  | 'user_attachment'
+  | 'document_scan'
+
+/** Anclaje del evento a una revisión del documento (PDF / versión). */
+export interface ResearchEvidenceDocumentAnchor {
+  /** Índice en `Document.versions` (1-based, alineado con `version`) en el momento del evento. */
+  documentVersion?: number
+  /** Hash del PDF del documento en ese momento. */
+  pdfHash?: string
+  /** Hash opcional de un fragmento de texto citado. */
+  excerptHash?: string
+}
+
+/**
+ * Entrada append-only de la bitácora de fuentes externas (URLs, etc.).
+ * No sustituye a `chatHistory`; correlaciona con él cuando aplica.
+ */
+export interface ResearchEvidenceLogEntry {
+  id: string
+  documentId: string
+  /** Momento en que el sistema registró el evento (ms). */
+  createdAt: number
+  /** Fecha de consulta del recurso (útil para citación legal/académica). */
+  accessedAt?: number
+  url: string
+  canonicalUrl?: string
+  title?: string
+  snippet?: string
+  origin: ResearchEvidenceLogOrigin
+  /** Índice en `chatHistory` al registrar (si el evento viene del hilo del agente). */
+  chatHistoryIndex?: number
+  anchor?: ResearchEvidenceDocumentAnchor
+  /** Cuenta o identificador local del usuario que añadió/registró la fuente. */
+  addedBy?: string
+  /**
+   * Mensaje del usuario que originó la indexación (p. ej. la pregunta que disparó la respuesta
+   * del asistente con fuentes, o el propio mensaje si el enlace lo envió el usuario).
+   */
+  indexedFromUserPrompt?: string
+  /** Comentario manual del usuario sobre la fuente (editable en la bitácora). */
+  userComment?: string
+  /** Si este evento matiza o reemplaza la lectura de otro registro de la bitácora. */
+  supersedesId?: string
+}
+
 export interface Document {
   // Identificación
   documentId: string                    // UUID (clave primaria)
@@ -210,6 +259,12 @@ export interface Document {
 
   /** Registro local de placeholders ↔ original para revertir y etiquetar (IndexedDB). */
   privacyPlaceholderRegistry?: PrivacyPlaceholderEntry[]
+
+  /**
+   * Bitácora append-only de fuentes externas (p. ej. URLs de consulta).
+   * Los documentos antiguos pueden no tener el campo; usar `normalizeResearchEvidenceLog` en `@/utils/researchEvidenceLog` al leer.
+   */
+  researchEvidenceLog?: ResearchEvidenceLogEntry[]
 }
 
 export interface ExternalAPIConfig {

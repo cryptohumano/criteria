@@ -316,17 +316,21 @@ export default function Documents() {
   }
 
   return (
-    <div className="container mx-auto p-3 sm:p-4 pb-6 sm:pb-8 space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+    <div className="space-y-4 sm:space-y-6 pb-6 sm:pb-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between xl:gap-6">
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold">Documentos</h1>
-          <p className="text-sm sm:text-base text-muted-foreground mt-1">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl xl:text-4xl">Documentos</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground sm:text-base xl:text-base xl:leading-relaxed">
             PDF en este dispositivo; colaboración con Etherpad si tu organización lo tiene activo. Una cuenta en la
             plataforma y la wallet local cubren lo necesario para editar y firmar.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
-          <Button onClick={() => navigate('/documents/new')} className="w-full sm:w-auto">
+          <Button
+            onClick={() => navigate('/documents/new')}
+            className="w-full sm:w-auto"
+            data-tour-id="tour-documents-page-create"
+          >
             <Plus className="mr-2 h-4 w-4" />
             <span className="hidden sm:inline">Crear documento</span>
             <span className="sm:hidden">Crear</span>
@@ -336,6 +340,7 @@ export default function Documents() {
               Ejemplo PDF (local)
             </Button>
           )}
+        </div>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="sm:max-w-[500px] mx-4 sm:mx-auto">
@@ -415,7 +420,6 @@ export default function Documents() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
 
       {/* Filtros: búsqueda siempre visible; origen y tipo colapsables */}
       <Card>

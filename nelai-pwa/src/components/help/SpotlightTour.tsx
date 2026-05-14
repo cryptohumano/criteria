@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 
 type Step = {
   id: string
@@ -7,12 +7,46 @@ type Step = {
   selector: string
 }
 
-function getRect(selector: string): DOMRect | null {
+function measureRect(selector: string): DOMRect | null {
   const el = document.querySelector(selector) as HTMLElement | null
   if (!el) return null
   const r = el.getBoundingClientRect()
-  if (!Number.isFinite(r.x) || r.width <= 0 || r.height <= 0) return null
+  if (!Number.isFinite(r.left) || !Number.isFinite(r.top) || r.width <= 0 || r.height <= 0) return null
   return r
+}
+
+/** Atenúa el resto de la pantalla dejando un hueco que deja pasar clics al elemento destacado. */
+function DimmingPanels({
+  rect,
+  pad,
+  onDimClick,
+}: {
+  rect: DOMRect | null
+  pad: number
+  onDimClick: () => void
+}) {
+  const dim = 'fixed z-[80] bg-black/55 pointer-events-auto'
+  if (!rect) {
+    return (
+      <div
+        className="pointer-events-auto fixed inset-0 z-[80] bg-black/55"
+        onClick={onDimClick}
+        aria-hidden
+      />
+    )
+  }
+  const l = Math.max(0, rect.left - pad)
+  const t = Math.max(0, rect.top - pad)
+  const r = Math.min(window.innerWidth, rect.right + pad)
+  const b = Math.min(window.innerHeight, rect.bottom + pad)
+  return (
+    <>
+      <div className={dim} style={{ top: 0, left: 0, right: 0, height: t }} onClick={onDimClick} aria-hidden />
+      <div className={dim} style={{ top: t, left: 0, width: l, height: b - t }} onClick={onDimClick} aria-hidden />
+      <div className={dim} style={{ top: t, left: r, right: 0, height: b - t }} onClick={onDimClick} aria-hidden />
+      <div className={dim} style={{ top: b, left: 0, right: 0, bottom: 0 }} onClick={onDimClick} aria-hidden />
+    </>
+  )
 }
 
 export function SpotlightTour({
@@ -28,11 +62,12 @@ export function SpotlightTour({
 }) {
   const initialIndex = useMemo(() => {
     if (!initialStepId) return 0
-    const idx = steps.findIndex((s) => s.id === initialStepId)
-    return idx >= 0 ? idx : 0
+    const i = steps.findIndex((s) => s.id === initialStepId)
+    return i >= 0 ? i : 0
   }, [initialStepId, steps])
 
   const [idx, setIdx] = useState(initialIndex)
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null)
   const step = steps[idx] || null
 
   useEffect(() => {
@@ -40,18 +75,43 @@ export function SpotlightTour({
     setIdx(initialIndex)
   }, [open, initialIndex])
 
-  const rect = useMemo(() => (step ? getRect(step.selector) : null), [step])
+  const remeasure = useCallback(() => {
+    if (!open || !step) {
+      setTargetRect(null)
+      return
+    }
+    setTargetRect(measureRect(step.selector))
+  }, [open, step])
+
+  useLayoutEffect(() => {
+    remeasure()
+  }, [remeasure, idx])
 
   useEffect(() => {
-    if (!open) return
-    if (!step) return
+    if (!open || !step) return
     const el = document.querySelector(step.selector) as HTMLElement | null
     el?.scrollIntoView?.({ block: 'center', inline: 'center' })
-  }, [open, step?.selector])
+    const t0 = window.requestAnimationFrame(() => remeasure())
+    const t1 = window.setTimeout(remeasure, 80)
+    const t2 = window.setTimeout(remeasure, 320)
+    const ro = new ResizeObserver(() => remeasure())
+    if (el) ro.observe(el)
+    window.addEventListener('resize', remeasure)
+    window.addEventListener('scroll', remeasure, true)
+    return () => {
+      window.cancelAnimationFrame(t0)
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      ro.disconnect()
+      window.removeEventListener('resize', remeasure)
+      window.removeEventListener('scroll', remeasure, true)
+    }
+  }, [open, step, remeasure])
 
   if (!open || !step) return null
 
   const pad = 10
+  const rect = targetRect
   const left = rect ? Math.max(8, rect.left - pad) : 24
   const top = rect ? Math.max(8, rect.top - pad) : 24
   const width = rect ? rect.width + pad * 2 : 280
@@ -63,34 +123,31 @@ export function SpotlightTour({
   const canPrev = idx > 0
   const canNext = idx < steps.length - 1
 
+  const handleDimClick = () => onOpenChange(false)
+
   return (
-    <div className="fixed inset-0 z-[80]">
-      {/* Overlay */}
-      <div
-        className="absolute inset-0 bg-black/55"
-        onClick={() => onOpenChange(false)}
-        aria-hidden
-      />
+    <div className="pointer-events-none fixed inset-0 z-[80]">
+      <DimmingPanels rect={rect} pad={pad} onDimClick={handleDimClick} />
 
-      {/* Highlight box: el truco es el boxShadow gigante que deja “hueco” alrededor */}
-      <div
-        className="absolute rounded-xl ring-2 ring-white/90"
-        style={{
-          left,
-          top,
-          width,
-          height,
-          boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
-          pointerEvents: 'none',
-        }}
-      />
+      {rect ? (
+        <div
+          className="pointer-events-none fixed z-[81] rounded-xl ring-2 ring-white/90"
+          style={{
+            left,
+            top,
+            width,
+            height,
+          }}
+          aria-hidden
+        />
+      ) : null}
 
-      {/* Tooltip */}
       <div
-        className="absolute w-[340px] max-w-[calc(100vw-32px)] rounded-xl border bg-background p-4 shadow-2xl"
+        className="pointer-events-auto fixed z-[82] w-[340px] max-w-[calc(100vw-32px)] rounded-xl border bg-background p-4 shadow-2xl"
         style={{ left: tooltipLeft, top: tooltipTop }}
         role="dialog"
         aria-label="Tutorial"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="text-sm font-semibold">{step.title}</div>
         <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{step.body}</div>
@@ -106,7 +163,7 @@ export function SpotlightTour({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={`h-8 px-3 rounded-md border text-sm ${!canPrev ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
+              className={`h-8 rounded-md border px-3 text-sm ${!canPrev ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted'}`}
               disabled={!canPrev}
               onClick={() => canPrev && setIdx((v) => Math.max(0, v - 1))}
             >
@@ -114,8 +171,7 @@ export function SpotlightTour({
             </button>
             <button
               type="button"
-              className={`h-8 px-3 rounded-md border text-sm ${!canNext ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
-              disabled={!canNext}
+              className={`h-8 rounded-md border px-3 text-sm ${!canNext ? '' : 'hover:bg-muted'}`}
               onClick={() => {
                 if (!canNext) onOpenChange(false)
                 else setIdx((v) => Math.min(steps.length - 1, v + 1))
@@ -129,4 +185,3 @@ export function SpotlightTour({
     </div>
   )
 }
-

@@ -1,5 +1,5 @@
 /* Embed hardening:
- * En Nelai, Etherpad se muestra dentro de un iframe bajo el mismo origen (/pad/*).
+ * En criterIA, Etherpad se muestra dentro de un iframe bajo el mismo origen (/pad/*).
  * El botón "Home" de Etherpad puede navegar fuera del pad y caer en rutas de la SPA,
  * lo que puede producir loops dentro del iframe. Lo ocultamos.
  */

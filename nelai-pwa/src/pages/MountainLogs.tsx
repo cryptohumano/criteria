@@ -169,11 +169,11 @@ export default function MountainLogs() {
   }
 
   return (
-    <div className="container mx-auto p-3 sm:p-4 pb-6 sm:pb-8 space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+    <div className="space-y-4 sm:space-y-6 pb-6 sm:pb-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between xl:gap-6">
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold">Bitácoras de Montañismo</h1>
-          <p className="text-sm sm:text-base text-muted-foreground mt-1">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl xl:text-4xl">Bitácoras de Montañismo</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground sm:text-base xl:leading-relaxed">
             Registra y gestiona tus expediciones de montañismo
           </p>
         </div>

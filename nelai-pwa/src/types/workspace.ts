@@ -1,4 +1,4 @@
-export type WorkspacePlan = 'trial' | 'starter' | 'enterprise'
+export type WorkspacePlan = 'trial' | 'starter' | 'pro' | 'enterprise'
 
 /** B2B: equipo; B2C: contenedor personal (un miembro). */
 export type OrganizationKind = 'team' | 'personal'

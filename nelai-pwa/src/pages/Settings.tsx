@@ -15,8 +15,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Plus, Edit, Trash2, Save, ExternalLink, Key, Globe, Shield, Bot, Check, UserX } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { useWorkspaceSession } from '@/contexts/WorkspaceSessionContext'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 import { deleteWorkspaceAccount } from '@/services/workspace/workspaceAuthApi'
 import { useNetwork } from '@/contexts/NetworkContext'
 import { useActiveAccount } from '@/contexts/ActiveAccountContext'
@@ -38,7 +38,16 @@ import { hasWorkspaceApiBase, llmProxyUsesServerKey } from '@/config/saasConfig'
 import { isSaaSWorkspaceMode } from '@/config/appMode'
 import { LlmUsageCard } from '@/components/workspace/LlmUsageCard'
 import { CRITERIA_STORAGE, LEGACY_NELAI_STORAGE } from '@/constants/storageKeys'
-import { createCheckout, fetchBillingPlans, openPortal, type BillingPlanPublic } from '@/services/billing/billingApi'
+import {
+  createCheckout,
+  fetchBillingPlans,
+  fetchBillingStatus,
+  openPortal,
+  postBillingSync,
+  type BillingPlanPublic,
+  type BillingStatusResponse,
+} from '@/services/billing/billingApi'
+import { refreshSessionFromServer } from '@/services/workspace/refreshSessionFromServer'
 
 interface ApiConfig {
   id: string
@@ -442,13 +451,39 @@ function formatUsd(n: number | null): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
+function formatBillingIsoDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    return new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(iso))
+  } catch {
+    return '—'
+  }
+}
+
+function formatLlmTokensLine(tokens: number, tokenPeriod: 'month' | 'fortnight'): string {
+  const periodLabel = tokenPeriod === 'fortnight' ? 'quincena' : 'mes'
+  if (tokens === 0) return `Tokens de IA incluidos: sin tope en catálogo / ${periodLabel}`
+  if (tokens >= 1_000_000) {
+    return `Tokens de IA incluidos: ~${(tokens / 1_000_000).toFixed(1)}M / ${periodLabel}`
+  }
+  return `Tokens de IA incluidos: ${(tokens / 1_000).toFixed(0)}k / ${periodLabel}`
+}
+
+function formatSeatsLine(maxUsersPerOrg: number): string {
+  if (maxUsersPerOrg === 0) return 'Asientos (usuarios): sin tope en catálogo'
+  return `Asientos (usuarios): hasta ${maxUsersPerOrg}`
+}
+
 function PlanCheckoutCard({
   plan,
   loading,
+  samePlanLocked,
   onCheckout,
 }: {
   plan: BillingPlanPublic
   loading: boolean
+  /** Suscripción activa del mismo tier: evitar doble checkout en el mismo periodo. */
+  samePlanLocked: boolean
   onCheckout: (id: 'starter' | 'pro' | 'enterprise') => void
 }) {
   const periodLabel = plan.tokenPeriod === 'fortnight' ? 'quincena' : 'mes'
@@ -475,15 +510,21 @@ function PlanCheckoutCard({
           <Button
             size="sm"
             variant={plan.id === 'starter' ? 'default' : plan.id === 'pro' ? 'secondary' : 'outline'}
-            disabled={loading || !plan.stripeCheckoutAvailable}
+            disabled={loading || !plan.stripeCheckoutAvailable || samePlanLocked}
             title={
-              !plan.stripeCheckoutAvailable
-                ? `Configura STRIPE_PRICE_${plan.id.toUpperCase()} en el servidor`
-                : undefined
+              samePlanLocked
+                ? 'Ya tienes este plan activo; usa «Administrar en Stripe» para cambios.'
+                : !plan.stripeCheckoutAvailable
+                  ? `Configura STRIPE_PRICE_${plan.id.toUpperCase()} en el servidor`
+                  : undefined
             }
             onClick={() => onCheckout(plan.id as 'starter' | 'pro' | 'enterprise')}
           >
-            {plan.stripeCheckoutAvailable ? 'Checkout' : 'Sin precio Stripe'}
+            {samePlanLocked
+              ? 'Plan activo'
+              : plan.stripeCheckoutAvailable
+                ? 'Checkout'
+                : 'Sin precio Stripe'}
           </Button>
         )}
       </div>
@@ -496,10 +537,96 @@ function PlanCheckoutCard({
 }
 
 function BillingSection() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { applySession } = useWorkspaceSession()
   const [loading, setLoading] = useState(false)
   const [plansLoading, setPlansLoading] = useState(true)
   const [plans, setPlans] = useState<BillingPlanPublic[] | null>(null)
   const [plansErr, setPlansErr] = useState<string | null>(null)
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null)
+  const [billingSnap, setBillingSnap] = useState<BillingStatusResponse | null>(null)
+
+  const billingReturn = searchParams.get('billing')
+
+  /** Reconciliar al abrir Facturación (webhook retrasado o STRIPE_SUCCESS_URL sin ?billing=success). */
+  useEffect(() => {
+    if (!isSaaSWorkspaceMode() || !hasWorkspaceApiBase()) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        await postBillingSync()
+        const next = await refreshSessionFromServer()
+        if (!cancelled && next) applySession(next)
+        try {
+          const p = await fetchBillingPlans()
+          if (!cancelled) setPlans(p.plans)
+        } catch {
+          /* ignore */
+        }
+        try {
+          const st = await fetchBillingStatus()
+          if (!cancelled) setBillingSnap(st)
+        } catch {
+          /* ignore */
+        }
+      } catch {
+        /* sin customer en Stripe aún */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [applySession])
+
+  useEffect(() => {
+    if (!isSaaSWorkspaceMode() || !hasWorkspaceApiBase()) return
+    if (!billingReturn) return
+    if (billingReturn === 'cancel') {
+      navigate('/settings', { replace: true })
+      return
+    }
+    if (billingReturn !== 'success') return
+
+    let cancelled = false
+    ;(async () => {
+      for (let i = 0; i < 10; i++) {
+        if (cancelled) return
+        try {
+          await postBillingSync()
+        } catch {
+          // Webhook o Stripe pueden ir unos segundos por detrás del redirect.
+        }
+        const next = await refreshSessionFromServer()
+        if (next) applySession(next)
+        const paid =
+          next && ['starter', 'pro', 'enterprise'].includes(next.organization.plan.toLowerCase())
+        if (paid && next) {
+          setCheckoutNotice(
+            `Plan activo: ${next.organization.plan}. El cupo de tokens de IA del periodo se aplica según este plan (véase «Uso de IA»).`,
+          )
+          try {
+            const p = await fetchBillingPlans()
+            if (!cancelled) setPlans(p.plans)
+          } catch {
+            /* ignore */
+          }
+          try {
+            const st = await fetchBillingStatus()
+            if (!cancelled) setBillingSnap(st)
+          } catch {
+            /* ignore */
+          }
+          break
+        }
+        await new Promise((r) => setTimeout(r, 900))
+      }
+      if (!cancelled) navigate('/settings', { replace: true })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [billingReturn, navigate, applySession])
 
   useEffect(() => {
     if (!isSaaSWorkspaceMode() || !hasWorkspaceApiBase()) return
@@ -512,6 +639,12 @@ function BillingSection() {
         if (!cancel) setPlansErr(e instanceof Error ? e.message : 'No se pudo cargar el catálogo de planes')
       } finally {
         if (!cancel) setPlansLoading(false)
+      }
+      try {
+        const st = await fetchBillingStatus()
+        if (!cancel) setBillingSnap(st)
+      } catch {
+        /* sin sesión o endpoint antiguo */
       }
     })()
     return () => {
@@ -548,6 +681,37 @@ function BillingSection() {
         <CardDescription>Planes por organización; el cobro recurrente lo define el Price en Stripe.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {checkoutNotice ? (
+          <Alert>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              <span>{checkoutNotice}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setCheckoutNotice(null)}>
+                Cerrar
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {billingSnap ? (
+          <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+            <div>
+              <div className="font-semibold">Tu plan</div>
+              <div className="text-muted-foreground">{billingSnap.billing.planLabel}</div>
+              {billingSnap.billing.stripeSubscriptionStatus ? (
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Estado en Stripe: {billingSnap.billing.stripeSubscriptionStatus}
+                </div>
+              ) : null}
+            </div>
+            <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+              <li>{formatLlmTokensLine(billingSnap.billing.llmTokensPerPeriod, billingSnap.billing.tokenPeriod)}</li>
+              <li>{formatSeatsLine(billingSnap.billing.maxUsersPerOrg)}</li>
+              <li>
+                Próxima fecha de facturación (fin del periodo actual, UTC):{' '}
+                <span className="text-foreground">{formatBillingIsoDate(billingSnap.billing.stripeCurrentPeriodEnd)}</span>
+              </li>
+            </ul>
+          </div>
+        ) : null}
         {plansErr ? (
           <Alert variant="destructive">
             <AlertDescription>{plansErr}</AlertDescription>
@@ -558,7 +722,16 @@ function BillingSection() {
         ) : plans && plans.length > 0 ? (
           <div className="grid gap-2 sm:grid-cols-2">
             {plans.map((p) => (
-              <PlanCheckoutCard key={p.id} plan={p} loading={loading} onCheckout={runCheckout} />
+              <PlanCheckoutCard
+                key={p.id}
+                plan={p}
+                loading={loading}
+                samePlanLocked={Boolean(
+                  billingSnap?.billing.lockedCheckoutPlanId &&
+                    billingSnap.billing.lockedCheckoutPlanId === p.id,
+                )}
+                onCheckout={runCheckout}
+              />
             ))}
           </div>
         ) : null}

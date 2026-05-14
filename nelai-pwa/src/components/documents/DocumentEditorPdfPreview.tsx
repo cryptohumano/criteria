@@ -55,7 +55,7 @@ export function DocumentEditorPdfPreview({
         metadata: {
           title: title || 'Sin título',
           description: subtitle || '',
-          author: author || 'Nelai',
+          author: author || 'criterIA',
           createdAt: new Date().toISOString(),
           paperFormat: paper,
         },

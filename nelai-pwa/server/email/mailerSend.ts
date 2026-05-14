@@ -24,7 +24,7 @@ export function isMailerSendConfigured(): boolean {
 export async function sendMailerSendEmail(input: SendMailerSendEmailInput): Promise<{ messageId?: string }> {
   const token = process.env.MAILERSEND_API_TOKEN?.trim()
   const fromEmail = process.env.MAILERSEND_FROM_EMAIL?.trim()
-  const fromName = (process.env.MAILERSEND_FROM_NAME || 'Nelai').trim()
+  const fromName = (process.env.MAILERSEND_FROM_NAME || 'criterIA').trim()
   if (!token) throw new Error('MAILERSEND_API_TOKEN no está configurado')
   if (!fromEmail) throw new Error('MAILERSEND_FROM_EMAIL no está configurado')
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {

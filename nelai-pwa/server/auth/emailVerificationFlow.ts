@@ -80,9 +80,9 @@ export async function createVerificationTokenAndSendEmail(
   try {
     await sendMailerSendEmail({
       to: { email: em, name },
-      subject: 'Verifica tu correo — Nelai',
+      subject: 'Verifica tu correo — criterIA',
       text: `Hola ${name},\n\nConfirma tu cuenta abriendo este enlace (válido 24 h):\n${verifyUrl}\n\nSi no creaste la cuenta, ignora este mensaje.`,
-      html: `<p>Hola ${escapeHtml(name)},</p><p><a href="${escapeAttr(verifyUrl)}">Verificar mi correo</a></p><p style="color:#666;font-size:12px;">Válido 24 h. Si no creaste la cuenta en Nelai, ignora este mensaje.</p>`,
+      html: `<p>Hola ${escapeHtml(name)},</p><p><a href="${escapeAttr(verifyUrl)}">Verificar mi correo</a></p><p style="color:#666;font-size:12px;">Válido 24 h. Si no creaste la cuenta en criterIA, ignora este mensaje.</p>`,
     })
     recordVerificationEmailSent(em)
   } catch (e) {

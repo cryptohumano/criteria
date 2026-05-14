@@ -6,7 +6,6 @@ import { generateBasicPDF, generatePDFWithTable, getPDFSizeFromBase64, type PDFG
 import { calculatePDFHash } from '../pdf/PDFHash'
 import { saveDocument } from '@/utils/documentStorage'
 import type { Document, DocumentType } from '@/types/documents'
-import { v4 as uuidv4 } from 'uuid'
 
 // Polyfill para uuid si no está disponible
 function generateUUID(): string {
@@ -76,6 +75,7 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Do
     createdAt: now,
     updatedAt: now,
     externalSource: options.externalSource,
+    researchEvidenceLog: [],
   }
 
   await saveDocument(document)
@@ -132,6 +132,7 @@ export async function createDocumentWithTable(
     synced: false,
     createdAt: now,
     updatedAt: now,
+    researchEvidenceLog: [],
   }
 
   await saveDocument(document)

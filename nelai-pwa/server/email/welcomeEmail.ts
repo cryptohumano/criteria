@@ -96,7 +96,7 @@ export async function sendWelcomeEmailSafe(input: WelcomeEmailInput): Promise<vo
     `<p><strong>Tipo:</strong> ${escapeHtml(kindLabel(input.organizationKind))}</p>`,
     '<p><strong>Qué incluye tu plan</strong></p>',
     `<ul style="margin:0 0 1em 1.2em;padding:0;">${highlightsHtml}</ul>`,
-    `<p><a href="${escapeAttr(appUrl)}">Abrir Nelai</a></p>`,
+    `<p><a href="${escapeAttr(appUrl)}">Abrir criterIA</a></p>`,
   ]
     .filter(Boolean)
     .join('')
@@ -104,9 +104,9 @@ export async function sendWelcomeEmailSafe(input: WelcomeEmailInput): Promise<vo
   try {
     await sendMailerSendEmail({
       to: { email, name },
-      subject: `Bienvenido a Nelai — ${ent.label}`,
-      text: `Hola ${name},\n\nTu cuenta ya está activa.\n\n${planBlockText}\n\nGracias por confiar en Nelai.`,
-      html: `<p>Hola ${escapeHtml(name)},</p><p>Tu cuenta ya está activa.</p>${planBlockHtml}<p style="color:#666;font-size:12px;">Gracias por confiar en Nelai.</p>`,
+      subject: `Bienvenido a criterIA — ${ent.label}`,
+      text: `Hola ${name},\n\nTu cuenta ya está activa.\n\n${planBlockText}\n\nGracias por confiar en criterIA.`,
+      html: `<p>Hola ${escapeHtml(name)},</p><p>Tu cuenta ya está activa.</p>${planBlockHtml}<p style="color:#666;font-size:12px;">Gracias por confiar en criterIA.</p>`,
     })
     console.info(`[welcome-email] enviado a ${email}`)
   } catch (e: unknown) {

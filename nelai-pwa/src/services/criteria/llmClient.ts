@@ -40,12 +40,21 @@ function extractGeminiCitations(payload: unknown): Array<{ url: string; title?: 
   const chunks = p?.candidates?.[0]?.groundingMetadata?.groundingChunks
   if (Array.isArray(chunks)) {
     for (const ch of chunks) {
-      const uri = ch?.web?.uri
-      if (typeof uri !== 'string' || !uri) continue
+      const uri =
+        (typeof ch?.web?.uri === 'string' && ch.web.uri) ||
+        (typeof ch?.retrievedContext?.uri === 'string' && ch.retrievedContext.uri) ||
+        (typeof ch?.uri === 'string' && ch.uri) ||
+        (typeof ch?.url === 'string' && ch.url) ||
+        ''
+      if (!uri) continue
       if (seen.has(uri)) continue
       seen.add(uri)
-      const title = typeof ch?.web?.title === 'string' ? ch.web.title : undefined
-      out.push({ url: uri, title })
+      const title =
+        (typeof ch?.web?.title === 'string' && ch.web.title) ||
+        (typeof ch?.retrievedContext?.title === 'string' && ch.retrievedContext.title) ||
+        (typeof ch?.title === 'string' && ch.title) ||
+        undefined
+      out.push({ url: uri, ...(title ? { title } : {}) })
     }
   }
 
@@ -62,7 +71,7 @@ function extractGeminiCitations(payload: unknown): Array<{ url: string; title?: 
     }
   }
 
-  return out.slice(0, 12)
+  return out.slice(0, 24)
 }
 
 export interface StreamCallbacks {
@@ -450,7 +459,8 @@ async function geminiChat(
     const candidate = data.candidates?.[0]
     const text = candidate?.content?.parts?.[0]?.text
     const truncated = candidate?.finishReason === 'MAX_TOKENS'
-    const citations = useGoogleSearch ? extractGeminiCitations(data) : []
+    /** Siempre extraer grounding/citationMetadata si vienen en el JSON (p. ej. tras fallback sin tools). */
+    const citations = extractGeminiCitations(data)
     return text
       ? { content: text, truncated, citations: citations.length ? citations : undefined }
       : { content: '', error: 'Formato de respuesta no reconocido' }
