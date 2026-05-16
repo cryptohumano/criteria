@@ -1,17 +1,17 @@
 # Tutorial guiado: documentos al iniciar (spotlight)
 
-En la **primera visita** a CriterIA (en este navegador), después de tener sesión o wallet lista para ver el escritorio, puede aparecer un recorrido con **spotlight** centrado en las **acciones principales de documentos**.
+En la **primera visita** a CriterIA (en este navegador), después de tener sesión o la **llave local** lista para ver el escritorio, puede aparecer un recorrido con **spotlight** centrado en las **acciones principales de documentos**.
 
 ## ¿Cuándo aparece?
 
 - **Modo organización (SaaS)**: la primera vez que entras en **Inicio** (`/`) o en **Documentos** (`/documents`) y aún no está marcado como visto el tutorial de documentos (`criteria.help.tour.documentsIntro.v1.seen`).
-- **Modo solo wallet (sin SaaS)**: la primera vez en **Inicio** o **Documentos** con la wallet **ya desbloqueada**, con la misma clave de almacenamiento.
+- **Modo solo llave local (sin SaaS)**: la primera vez en **Inicio** o **Documentos** con el almacén **ya desbloqueado**, con la misma clave de almacenamiento.
 
 En **móvil**, el primer paso suele resaltar el **botón flotante** del menú; en **escritorio**, el enlace **Documentos** del menú lateral.
 
-## Orden respecto al tutorial de wallet
+## Orden respecto al tutorial de la llave local
 
-Si tu wallet está **bloqueada** en modo SaaS, CriterIA intenta mostrar **primero** este recorrido de documentos (inicio o listado) y **después**, si sigue bloqueada, el tutorial guiado de **wallet** (banner y desbloqueo).
+Si el almacén está **bloqueado** en modo SaaS, CriterIA intenta mostrar **primero** este recorrido de documentos (inicio o listado) y **después**, si sigue bloqueado, el tutorial guiado de **llave local** (banner y desbloqueo).
 
 ## Qué cubre el recorrido en Inicio (SaaS)
 
@@ -22,7 +22,7 @@ Si tu wallet está **bloqueada** en modo SaaS, CriterIA intenta mostrar **primer
 5. **Ver todos mis documentos**: salto al listado completo.
 6. **Identidad digital**: vínculo entre tu usuario de organización y tu llave local (DID).
 
-## Qué cubre en Inicio (solo wallet)
+## Qué cubre en Inicio (solo llave local)
 
 1. Misma idea de navegación a **Documentos**.
 2. Tarjeta de acceso rápido **Documentos** del panel de inicio.

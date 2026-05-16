@@ -36,6 +36,7 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
   const [exportOptions, setExportOptions] = useState({
     includeImages: false, // Por defecto no incluir imágenes (backup más pequeño)
     includePDFs: false, // Por defecto no incluir PDFs (backup más pequeño)
+    includeAutographicSignatures: false,
   })
   const [importOptions, setImportOptions] = useState({
     overwriteAccounts: false,
@@ -44,6 +45,11 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
     overwriteWebAuthn: false,
     overwriteMountainLogs: false,
     overwriteDocuments: false,
+    overwriteTransactions: false,
+    overwriteExternalApiConfigs: false,
+    overwriteDocumentQueue: false,
+    overwriteAutographicSignatures: false,
+    overwriteEmergencies: false,
   })
   const [importPassword, setImportPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -56,6 +62,10 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
     transactionsImported: number
     mountainLogsImported: number
     documentsImported: number
+    externalApiConfigsImported: number
+    documentQueueImported: number
+    autographicSignaturesImported: number
+    emergenciesImported: number
     errors: string[]
   } | null>(null)
 
@@ -68,9 +78,12 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
       console.log('[BackupManager] Iniciando descarga de backup...', exportOptions)
       await downloadBackup(exportOptions)
       console.log('[BackupManager] ✅ Backup descargado exitosamente')
-      const sizeInfo = exportOptions.includeImages || exportOptions.includePDFs
-        ? ' (incluye imágenes/PDFs - archivo más grande)'
-        : ' (solo metadata - archivo más pequeño)'
+      const sizeInfo =
+        exportOptions.includeImages ||
+        exportOptions.includePDFs ||
+        exportOptions.includeAutographicSignatures
+          ? ' (incluye medios pesados - archivo más grande)'
+          : ' (solo metadata - archivo más pequeño)'
       setSuccess(`Backup exportado exitosamente${sizeInfo}. El archivo debería descargarse automáticamente.`)
       
       // Mostrar información adicional en consola para debugging
@@ -189,18 +202,24 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
       console.log(`[BackupManager] Datos refrescados - hasAccounts: ${hasAccounts}, hasWebAuthn: ${hasWebAuthn}`)
 
       // Mostrar resumen
-          const totalImported = 
+          const totalImported =
             result.accountsImported +
             result.contactsImported +
             result.apiConfigsImported +
             result.webauthnImported +
-            result.transactionsImported
+            result.transactionsImported +
+            result.mountainLogsImported +
+            result.documentsImported +
+            result.externalApiConfigsImported +
+            result.documentQueueImported +
+            result.autographicSignaturesImported +
+            result.emergenciesImported
 
           if (totalImported > 0) {
             const parts = [
               `${result.accountsImported} cuenta(s)`,
               `${result.contactsImported} contacto(s)`,
-              `${result.apiConfigsImported} configuración(es) de API`,
+              `${result.apiConfigsImported} configuración(es) de API (localStorage)`,
               `${result.webauthnImported} credencial(es) WebAuthn`,
               `${result.transactionsImported} transacción(es)`,
             ]
@@ -209,6 +228,18 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
             }
             if (result.documentsImported > 0) {
               parts.push(`${result.documentsImported} documento(s)`)
+            }
+            if (result.externalApiConfigsImported > 0) {
+              parts.push(`${result.externalApiConfigsImported} API(s) externa(s) (IndexedDB)`)
+            }
+            if (result.documentQueueImported > 0) {
+              parts.push(`${result.documentQueueImported} ítem(s) de cola`)
+            }
+            if (result.autographicSignaturesImported > 0) {
+              parts.push(`${result.autographicSignaturesImported} firma(s) autográfica(s)`)
+            }
+            if (result.emergenciesImported > 0) {
+              parts.push(`${result.emergenciesImported} emergencia(s)`)
             }
             setSuccess(`Importación completada: ${parts.join(', ')}`)
       } else {
@@ -255,15 +286,25 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
   const webauthnCount = backup?.webauthnCredentials?.length || 0
   const mountainLogsCount = backup?.mountainLogs?.length || 0
   const documentsCount = backup?.documents?.length || 0
+  const transactionsCount = backup?.transactions?.length || 0
+  const externalApiConfigsCount = backup?.externalApiConfigs?.length || 0
+  const documentQueueCount = backup?.documentQueue?.length || 0
+  const autographicCount = backup?.autographicSignatures?.length || 0
+  const emergenciesCount = backup?.emergencies?.length || 0
   const includesImages = backup?.metadata?.includesImages || false
   const includesPDFs = backup?.metadata?.includesPDFs || false
+  const includesAutographicSignatures = backup?.metadata?.includesAutographicSignatures || false
 
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold">Backup e Importación</h3>
         <p className="text-sm text-muted-foreground">
-          Exporta o importa todos tus datos (cuentas, contactos, configuraciones)
+          Exporta o importa datos del dispositivo. Cada documento guardado en IndexedDB incluye lo que corresponde al
+          editor (local Quill o Etherpad): HTML del editor, historial de conversación con el agente, bitácora de
+          fuentes y referencias de consulta, placeholders de privacidad y autoguardados; los PDF en base64 solo si
+          eliges incluirlos abajo. Lo que exista solo como borrador en la sesión del navegador, sin guardar, no forma
+          parte del backup.
         </p>
       </div>
 
@@ -335,10 +376,25 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
                     Incluir PDFs completos (base64)
                   </Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="includeAutographicSignatures"
+                    checked={exportOptions.includeAutographicSignatures}
+                    onCheckedChange={(checked) =>
+                      setExportOptions({
+                        ...exportOptions,
+                        includeAutographicSignatures: checked === true,
+                      })
+                    }
+                  />
+                  <Label htmlFor="includeAutographicSignatures" className="text-sm font-normal cursor-pointer">
+                    Incluir imágenes de firmas autográficas (base64)
+                  </Label>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Por defecto solo se incluye metadata (archivo más pequeño). 
-                Marca estas opciones para incluir imágenes y PDFs completos (archivo más grande).
+                Por defecto solo se incluye metadata (archivo más pequeño). Marca las opciones para incluir
+                binarios pesados (imágenes de bitácoras, PDFs, firmas autográficas).
               </p>
             </div>
             <Button
@@ -359,8 +415,11 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
               )}
             </Button>
             <p className="text-xs text-muted-foreground">
-              El archivo incluirá: cuentas, credenciales WebAuthn, contactos, configuraciones de API, 
-              bitácoras y documentos {exportOptions.includeImages || exportOptions.includePDFs ? '(con imágenes/PDFs)' : '(solo metadata)'}
+              Documentos en IndexedDB: texto Quill, chat del agente, bitácora de fuentes y referencias, versiones con
+              HTML, placeholders; el PDF en base64 solo si marcas incluir PDFs. Las bitácoras de montañismo van en su
+              propio bloque; las fotos adjuntas solo si marcas incluir imágenes. También se respaldan keyring, WebAuthn,
+              transacciones, cola de documentos, APIs externas, emergencias, firmas autográficas, y en localStorage
+              contactos y configuraciones API legacy.
             </p>
           </CardContent>
         </Card>
@@ -430,14 +489,26 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
                     <li>Versión: {backup.version}</li>
                     <li>Cuentas: {accountsCount}</li>
                     <li>Contactos: {contactsCount}</li>
-                    <li>Configuraciones de API: {apiConfigsCount}</li>
+                    <li>Configuraciones de API (localStorage): {apiConfigsCount}</li>
                     <li>Credenciales WebAuthn: {webauthnCount}</li>
+                    {transactionsCount > 0 && <li>Transacciones: {transactionsCount}</li>}
                     {mountainLogsCount > 0 && (
                       <li>Bitácoras: {mountainLogsCount} {includesImages ? '(con imágenes)' : '(solo metadata)'}</li>
                     )}
                     {documentsCount > 0 && (
                       <li>Documentos: {documentsCount} {includesPDFs ? '(con PDFs)' : '(solo metadata)'}</li>
                     )}
+                    {externalApiConfigsCount > 0 && (
+                      <li>APIs externas (IndexedDB): {externalApiConfigsCount}</li>
+                    )}
+                    {documentQueueCount > 0 && <li>Cola de documentos: {documentQueueCount}</li>}
+                    {autographicCount > 0 && (
+                      <li>
+                        Firmas autográficas: {autographicCount}{' '}
+                        {includesAutographicSignatures ? '(con imagen)' : '(solo metadata / sin imagen)'}
+                      </li>
+                    )}
+                    {emergenciesCount > 0 && <li>Emergencias: {emergenciesCount}</li>}
                   </ul>
                 </AlertDescription>
               </Alert>
@@ -486,9 +557,88 @@ export function BackupManager({ onImportComplete }: BackupManagerProps = {}) {
                       }
                     />
                     <Label htmlFor="overwriteApiConfigs" className="cursor-pointer">
-                      Sobrescribir configuraciones de API ({apiConfigsCount} configuración(es))
+                      Sobrescribir configuraciones de API en localStorage ({apiConfigsCount})
                     </Label>
                   </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="overwriteTransactions"
+                      checked={importOptions.overwriteTransactions}
+                      onCheckedChange={(checked) =>
+                        setImportOptions({ ...importOptions, overwriteTransactions: checked === true })
+                      }
+                    />
+                    <Label htmlFor="overwriteTransactions" className="cursor-pointer">
+                      Sobrescribir transacciones existentes ({transactionsCount})
+                    </Label>
+                  </div>
+
+                  {externalApiConfigsCount > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="overwriteExternalApiConfigs"
+                        checked={importOptions.overwriteExternalApiConfigs}
+                        onCheckedChange={(checked) =>
+                          setImportOptions({
+                            ...importOptions,
+                            overwriteExternalApiConfigs: checked === true,
+                          })
+                        }
+                      />
+                      <Label htmlFor="overwriteExternalApiConfigs" className="cursor-pointer">
+                        Sobrescribir APIs externas en IndexedDB ({externalApiConfigsCount})
+                      </Label>
+                    </div>
+                  )}
+
+                  {documentQueueCount > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="overwriteDocumentQueue"
+                        checked={importOptions.overwriteDocumentQueue}
+                        onCheckedChange={(checked) =>
+                          setImportOptions({ ...importOptions, overwriteDocumentQueue: checked === true })
+                        }
+                      />
+                      <Label htmlFor="overwriteDocumentQueue" className="cursor-pointer">
+                        Sobrescribir cola de documentos ({documentQueueCount})
+                      </Label>
+                    </div>
+                  )}
+
+                  {autographicCount > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="overwriteAutographicSignatures"
+                        checked={importOptions.overwriteAutographicSignatures}
+                        onCheckedChange={(checked) =>
+                          setImportOptions({
+                            ...importOptions,
+                            overwriteAutographicSignatures: checked === true,
+                          })
+                        }
+                      />
+                      <Label htmlFor="overwriteAutographicSignatures" className="cursor-pointer">
+                        Sobrescribir firmas autográficas ({autographicCount})
+                      </Label>
+                    </div>
+                  )}
+
+                  {emergenciesCount > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="overwriteEmergencies"
+                        checked={importOptions.overwriteEmergencies}
+                        onCheckedChange={(checked) =>
+                          setImportOptions({ ...importOptions, overwriteEmergencies: checked === true })
+                        }
+                      />
+                      <Label htmlFor="overwriteEmergencies" className="cursor-pointer">
+                        Sobrescribir emergencias ({emergenciesCount})
+                      </Label>
+                    </div>
+                  )}
 
                   <div className="flex items-center space-x-2">
                     <Checkbox

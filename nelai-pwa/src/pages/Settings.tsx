@@ -23,6 +23,7 @@ import { useActiveAccount } from '@/contexts/ActiveAccountContext'
 import { NetworkSwitcher } from '@/components/NetworkSwitcher'
 import { DkgNetworkSwitcher } from '@/components/DkgNetworkSwitcher'
 import { WebAuthnCredentialsManager } from '@/components/WebAuthnCredentialsManager'
+import { RecoveryPhraseRevealSection } from '@/components/security/RecoveryPhraseRevealSection'
 import { DatabaseManager } from '@/components/DatabaseManager'
 import { BackupManager } from '@/components/BackupManager'
 import {
@@ -1257,6 +1258,8 @@ export default function Settings() {
         {/* Seguridad */}
         <TabsContent value="security" className="space-y-4">
           <WebAuthnCredentialsManager />
+
+          <RecoveryPhraseRevealSection />
 
           <Card data-section="backup">
             <CardHeader>

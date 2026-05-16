@@ -49,6 +49,7 @@ import {
   ListTree,
   PanelLeftClose,
   Loader2,
+  Upload,
 } from 'lucide-react'
 import type {
   DocumentType,
@@ -100,6 +101,7 @@ import {
   downloadResearchEvidenceCsv,
   downloadResearchEvidenceJson,
   normalizeResearchEvidenceLog,
+  parseResearchEvidenceLogImportJson,
 } from '@/utils/researchEvidenceLog'
 
 /** Texto plano alineado con el estado React del editor (Quill puede ir un tick detrás). */
@@ -160,6 +162,7 @@ export default function DocumentEditor() {
     const v = (searchParams.get('intent') || '').trim().toLowerCase()
     if (v === 'contract') return 'contract' as const
     if (v === 'academic') return 'academic' as const
+    if (v === 'content' || v === 'creator') return 'content' as const
     return null
   }, [documentId, searchParams])
 
@@ -182,10 +185,13 @@ export default function DocumentEditor() {
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
   const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
   const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
+  const importResearchEvidenceInputRef = useRef<HTMLInputElement>(null)
   const [agentOpen, setAgentOpen] = useState(() => entryIntentInitial !== null)
-  const [agentProfile, setAgentProfile] = useState<AgentProfile>(() =>
-    entryIntentInitial === 'contract' ? 'legal_mx' : 'academic_es',
-  )
+  const [agentProfile, setAgentProfile] = useState<AgentProfile>(() => {
+    if (entryIntentInitial === 'contract') return 'legal_mx'
+    if (entryIntentInitial === 'content') return 'creator_es'
+    return 'academic_es'
+  })
   const [agentInitialSubView] = useState<'chat' | 'privacy'>(() =>
     entryIntentInitial === 'contract' ? 'privacy' : 'chat',
   )
@@ -271,12 +277,17 @@ export default function DocumentEditor() {
   useEffect(() => {
     if (documentId || entryIntentHandledRef.current) return
     const v = (searchParams.get('intent') || '').trim().toLowerCase()
-    if (v !== 'contract' && v !== 'academic') return
+    if (v !== 'contract' && v !== 'academic' && v !== 'content' && v !== 'creator') return
     entryIntentHandledRef.current = true
     if (v === 'contract') {
       toast.message('Analizar contrato', {
         description:
           'Editor local con perfil Legal MX. La pestaña Privacidad del agente está abierta: revisa datos personales (manual o asistido) antes de enviar a la IA. Puedes adjuntar un PDF para extraer texto con revisión.',
+      })
+    } else if (v === 'content' || v === 'creator') {
+      toast.message('Creador de contenido', {
+        description:
+          'Editor local con perfil para redes, guiones y piezas editoriales. El agente está listo: pega el borrador o adjunta material y pide mejoras, variantes o análisis editorial.',
       })
     } else {
       toast.message('Documento académico', {
@@ -608,6 +619,66 @@ export default function DocumentEditor() {
     [documentId],
   )
 
+  const handlePickImportResearchEvidenceJson = useCallback(() => {
+    importResearchEvidenceInputRef.current?.click()
+  }, [])
+
+  const handleImportResearchEvidenceJsonChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file) return
+      const binder = documentId ?? pendingEvidenceBinderRef.current
+      if (!binder) {
+        toast.error('No hay sesión de documento para asociar las fuentes')
+        return
+      }
+      try {
+        const text = await file.text()
+        const { entries, skipped } = parseResearchEvidenceLogImportJson(text, binder)
+        if (!entries.length) {
+          toast.message('El archivo no contiene entradas válidas para importar')
+          return
+        }
+        if (documentId) {
+          const doc = await getDocument(documentId)
+          if (!doc) {
+            toast.error('Documento no encontrado')
+            return
+          }
+          const prevLen = normalizeResearchEvidenceLog(doc.researchEvidenceLog).length
+          const merged = appendResearchEvidenceEntries(doc.researchEvidenceLog, entries)
+          await updateDocument(documentId, { researchEvidenceLog: merged })
+          setResearchEvidenceLog(merged)
+          const added = merged.length - prevLen
+          if (added === 0) {
+            toast.message('Ninguna fila nueva: los ids del JSON ya existen en esta bitácora.')
+          } else {
+            toast.success(`Se añadieron ${added} fuente(s) a la bitácora`)
+          }
+        } else {
+          const prev = readResearchEvidenceSession(binder)
+          const prevLen = prev.length
+          const merged = appendResearchEvidenceEntries(prev, entries)
+          sessionStorage.setItem(`${RESEARCH_EVIDENCE_SESSION_PREFIX}${binder}`, JSON.stringify(merged))
+          setResearchEvidenceLog(merged)
+          const added = merged.length - prevLen
+          if (added === 0) {
+            toast.message('Ninguna fila nueva: los ids del JSON ya existen en esta bitácora.')
+          } else {
+            toast.success(`Se añadieron ${added} fuente(s) a la bitácora`)
+          }
+        }
+        if (skipped > 0) {
+          toast.message(`Se omitieron ${skipped} fila(s) inválida(s) en el JSON`)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Error al importar JSON')
+      }
+    },
+    [documentId],
+  )
+
   useEffect(() => {
     if (!documentId) {
       const b = pendingEvidenceBinderRef.current
@@ -701,6 +772,7 @@ export default function DocumentEditor() {
           documentType: doc.type,
           keywords: doc.metadata?.keywords,
           category: doc.category,
+          criteriaDomain: doc.metadata?.criteriaDomain,
         }),
       )
       const initialContent = (doc.metadata.contentHtml as string) || ''
@@ -1158,7 +1230,7 @@ export default function DocumentEditor() {
               >
                 <SelectTrigger
                   className="h-8 text-[11px] sm:text-xs w-full"
-                  title="Modo del agente (académico o legal)"
+                  title="Modo del agente (académico, legal o creador de contenido)"
                   aria-label="Perfil del agente"
                 >
                   <SelectValue placeholder="Perfil" />
@@ -1166,6 +1238,7 @@ export default function DocumentEditor() {
                 <SelectContent>
                   <SelectItem value="academic_es">Académico</SelectItem>
                   <SelectItem value="legal_mx">Legal MX</SelectItem>
+                  <SelectItem value="creator_es">Creador de contenido</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1544,6 +1617,7 @@ export default function DocumentEditor() {
                 <SelectContent>
                   <SelectItem value="academic_es">Académico (ensayos e investigación)</SelectItem>
                   <SelectItem value="legal_mx">Legal MX (contratos y revisión legal)</SelectItem>
+                  <SelectItem value="creator_es">Creador de contenido (redes, guiones, newsletters)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground leading-snug">
@@ -1679,10 +1753,20 @@ export default function DocumentEditor() {
             </DialogTitle>
             <DialogDescription>
               URLs registradas desde el chat del agente (mensajes usuario y asistente, citas de búsqueda). Se guardan en
-              este documento.
+              este documento. Puedes importar el mismo formato que «Exportar JSON»; las entradas se fusionan sin duplicar
+              ids.
             </DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
+            <input
+              ref={importResearchEvidenceInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              aria-hidden
+              tabIndex={-1}
+              onChange={handleImportResearchEvidenceJsonChange}
+            />
             <Button
               type="button"
               size="sm"
@@ -1690,6 +1774,15 @@ export default function DocumentEditor() {
               onClick={() => downloadResearchEvidenceJson(researchEvidenceLog, documentId || 'documento')}
             >
               Exportar JSON
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handlePickImportResearchEvidenceJson}
+            >
+              <Upload className="h-4 w-4 mr-1.5" aria-hidden />
+              Importar JSON
             </Button>
             <Button
               type="button"

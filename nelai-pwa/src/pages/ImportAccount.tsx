@@ -11,6 +11,7 @@ import { useKeyringContext } from '@/contexts/KeyringContext'
 import { AlertCircle, CheckCircle, Copy, Eye, EyeOff, Key, FileText, Users } from 'lucide-react'
 import { decryptPolkadotJsBackup, isPolkadotJsBackup } from '@/utils/polkadotJsBackup'
 import { getAllEncryptedAccounts } from '@/utils/secureStorage'
+import { getAllWebAuthnCredentials } from '@/utils/webauthnStorage'
 
 type CryptoType = 'sr25519' | 'ed25519' | 'ecdsa'
 type ImportMethod = 'mnemonic' | 'uri' | 'json'
@@ -18,7 +19,7 @@ type ImportMethod = 'mnemonic' | 'uri' | 'json'
 export default function ImportAccount() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { addFromMnemonic, addFromUri, addFromJson, isUnlocked, unlock } = useKeyringContext()
+  const { addFromMnemonic, addFromUri, addFromJson, isUnlocked, unlock, unlockWithWebAuthn } = useKeyringContext()
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Obtener el método desde los query params, por defecto 'mnemonic'
@@ -81,7 +82,17 @@ export default function ImportAccount() {
     setSuccess(false)
     setImportedAddress(null)
 
-    const mustUseVaultPassword = vaultExists === true
+    let storedSnapshot: Awaited<ReturnType<typeof getAllEncryptedAccounts>> = []
+    try {
+      storedSnapshot = await getAllEncryptedAccounts()
+    } catch {
+      storedSnapshot = []
+    }
+    const webauthnOnlyVault =
+      storedSnapshot.length > 0 &&
+      storedSnapshot.every((a) => (a.vaultCipher ?? 'password') === 'webauthn')
+
+    const mustUseVaultPassword = vaultExists === true && !webauthnOnlyVault
 
     if (mustUseVaultPassword && !password.trim()) {
       setError('Ingresa la contraseña de tu wallet para importar y guardar esta cuenta.')
@@ -103,13 +114,27 @@ export default function ImportAccount() {
     setLoading(true)
 
     try {
-      // Si no está desbloqueado y hay contraseña, intentar desbloquear primero
-      if (!isUnlocked && password.trim()) {
-        const unlocked = await unlock(password.trim())
-        if (!unlocked) {
-          setError('Error al desbloquear el wallet. Verifica tu contraseña.')
-          setLoading(false)
-          return
+      if (!isUnlocked && storedSnapshot.length > 0) {
+        if (webauthnOnlyVault) {
+          const creds = await getAllWebAuthnCredentials()
+          if (creds.length === 0) {
+            setError('El almacén usa WebAuthn pero no hay credencial en este dispositivo.')
+            setLoading(false)
+            return
+          }
+          const unlocked = await unlockWithWebAuthn(creds[0].id)
+          if (!unlocked) {
+            setError('No se pudo desbloquear con WebAuthn. Intenta de nuevo.')
+            setLoading(false)
+            return
+          }
+        } else if (password.trim()) {
+          const unlocked = await unlock(password.trim())
+          if (!unlocked) {
+            setError('Error al desbloquear el wallet. Verifica tu contraseña.')
+            setLoading(false)
+            return
+          }
         }
       }
 
@@ -133,7 +158,7 @@ export default function ImportAccount() {
             mnemonic.trim(),
             name.trim() || undefined,
             type,
-            password.trim() || undefined
+            password.trim() || undefined,
           )
           break
 
@@ -323,54 +348,69 @@ export default function ImportAccount() {
     setSuccess(false)
 
     try {
-      // Verificar si hay cuentas almacenadas
       const storedAccounts = await getAllEncryptedAccounts()
       const hasStoredAccounts = storedAccounts.length > 0
+      const webauthnOnlyVault =
+        hasStoredAccounts &&
+        storedAccounts.every((a) => (a.vaultCipher ?? 'password') === 'webauthn')
 
-      // Determinar la contraseña final a usar
       let finalPassword: string | undefined = undefined
 
-      // Si hay cuentas almacenadas, requerir contraseña para desbloquear
       if (hasStoredAccounts && !isUnlocked) {
-        if (!password || password.trim().length === 0) {
-          setError('Se requiere una contraseña para desbloquear el wallet y guardar las cuentas importadas')
-          setLoading(false)
-          return
+        if (webauthnOnlyVault) {
+          const creds = await getAllWebAuthnCredentials()
+          if (!creds.length) {
+            setError('El almacén usa WebAuthn pero no hay credencial en este dispositivo.')
+            setLoading(false)
+            return
+          }
+          const unlocked = await unlockWithWebAuthn(creds[0].id)
+          if (!unlocked) {
+            setError('No se pudo desbloquear con WebAuthn.')
+            setLoading(false)
+            return
+          }
+          finalPassword = undefined
+        } else {
+          if (!password || password.trim().length === 0) {
+            setError('Se requiere una contraseña para desbloquear el wallet y guardar las cuentas importadas')
+            setLoading(false)
+            return
+          }
+          const unlocked = await unlock(password.trim())
+          if (!unlocked) {
+            setError('Error al desbloquear el wallet. Verifica tu contraseña.')
+            setLoading(false)
+            return
+          }
+          finalPassword = password.trim()
         }
-        const unlocked = await unlock(password.trim())
-        if (!unlocked) {
-          setError('Error al desbloquear el wallet. Verifica tu contraseña.')
-          setLoading(false)
-          return
-        }
-        // Usar la contraseña que desbloqueó el wallet
-        finalPassword = password.trim()
       } else if (hasStoredAccounts && isUnlocked) {
-        // Si el wallet ya está desbloqueado, requerir contraseña para guardar las nuevas cuentas
-        if (!password || password.trim().length === 0) {
-          setError('Se requiere una contraseña para guardar las cuentas importadas. Usa la contraseña de tu wallet.')
-          setLoading(false)
-          return
+        if (webauthnOnlyVault) {
+          finalPassword = undefined
+        } else {
+          if (!password || password.trim().length === 0) {
+            setError('Se requiere una contraseña para guardar las cuentas importadas. Usa la contraseña de tu wallet.')
+            setLoading(false)
+            return
+          }
+          finalPassword = password.trim()
         }
-        // Validar que la contraseña sea correcta intentando desbloquear (aunque ya esté desbloqueado)
-        // O simplemente usar la contraseña proporcionada
-        finalPassword = password.trim()
       } else {
-        // Si no hay cuentas almacenadas, requerir contraseña para guardar las nuevas cuentas
         if (!password || password.trim().length === 0) {
-          setError('Se requiere una contraseña para proteger y guardar las cuentas importadas. Esta será tu contraseña principal del wallet.')
+          setError(
+            'Se requiere una contraseña para proteger y guardar las cuentas importadas. Esta será tu contraseña principal del wallet.',
+          )
           setLoading(false)
           return
         }
 
-        // Validar longitud mínima
         if (password.trim().length < 8) {
           setError('La contraseña debe tener al menos 8 caracteres')
           setLoading(false)
           return
         }
 
-        // Validar que coincidan
         if (confirmPassword && password.trim() !== confirmPassword.trim()) {
           setError('Las contraseñas no coinciden')
           setLoading(false)
@@ -380,8 +420,7 @@ export default function ImportAccount() {
         finalPassword = password.trim()
       }
 
-      // Asegurar que tenemos una contraseña válida antes de importar
-      if (!finalPassword || finalPassword.length === 0) {
+      if (!webauthnOnlyVault && (!finalPassword || finalPassword.length === 0)) {
         setError('Se requiere una contraseña válida para guardar las cuentas importadas')
         setLoading(false)
         return

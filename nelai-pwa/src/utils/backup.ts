@@ -7,7 +7,9 @@ import type { EncryptedAccount } from './secureStorage'
 import type { WebAuthnCredential } from './webauthn'
 import type { StoredTransaction } from './transactionStorage'
 import type { MountainLog, MountainLogImage } from '@/types/mountainLogs'
-import type { Document } from '@/types/documents'
+import type { Document, DocumentQueueItem, ExternalAPIConfig } from '@/types/documents'
+import type { Emergency } from '@/types/emergencies'
+import type { AutographicSignature } from '@/utils/autographicSignatureStorage'
 import { CRITERIA_STORAGE, LEGACY_NELAI_STORAGE } from '@/constants/storageKeys'
 
 export interface BackupData {
@@ -20,16 +22,22 @@ export interface BackupData {
   apiConfigs: any[]
   mountainLogs?: MountainLog[] // Bitácoras de montañismo
   documents?: Document[] // Documentos firmados
+  /** Configs de API externa en IndexedDB (diferente de `apiConfigs` en localStorage) */
+  externalApiConfigs?: ExternalAPIConfig[]
+  documentQueue?: DocumentQueueItem[]
+  autographicSignatures?: AutographicSignature[]
+  emergencies?: Emergency[]
   metadata?: {
     appName: string
     appVersion?: string
     description?: string
     includesImages?: boolean // Si incluye imágenes completas (base64)
     includesPDFs?: boolean // Si incluye PDFs completos (base64)
+    includesAutographicSignatures?: boolean
   }
 }
 
-const BACKUP_VERSION = '1.1.0' // Incrementado para incluir bitácoras y documentos
+const BACKUP_VERSION = '1.2.0' // Incluye external-api-configs, cola de documentos, firmas autográficas y emergencias
 const CONTACTS_STORAGE_KEY = CRITERIA_STORAGE.contacts
 const API_CONFIGS_STORAGE_KEY = CRITERIA_STORAGE.apiConfigs
 const LEGACY_CONTACTS_STORAGE_KEY = LEGACY_NELAI_STORAGE.contacts
@@ -69,7 +77,8 @@ function sanitizeMountainLog(log: MountainLog, includeImages: boolean): Mountain
 }
 
 /**
- * Sanitiza un documento removiendo base64 del PDF si no se incluye
+ * Sanitiza un documento removiendo base64 del PDF si no se incluye.
+ * No elimina chat del agente, bitácora de fuentes (researchEvidenceLog), HTML del editor ni adjuntos en el chat.
  */
 function sanitizeDocument(doc: Document, includePDFs: boolean): Document {
   if (includePDFs) {
@@ -90,6 +99,17 @@ function sanitizeDocument(doc: Document, includePDFs: boolean): Document {
   return sanitizedDoc
 }
 
+function sanitizeAutographicSignature(
+  sig: AutographicSignature,
+  includeImage: boolean
+): AutographicSignature {
+  if (includeImage) return sig
+  return {
+    ...sig,
+    signatureImage: '',
+  }
+}
+
 /**
  * Exporta todos los datos de la aplicación a un objeto JSON
  * @param options Opciones de exportación
@@ -97,8 +117,13 @@ function sanitizeDocument(doc: Document, includePDFs: boolean): Document {
 export async function exportBackup(options: {
   includeImages?: boolean // Si incluir imágenes completas (base64) en bitácoras
   includePDFs?: boolean // Si incluir PDFs completos (base64) en documentos
+  includeAutographicSignatures?: boolean // Base64 de firmas autográficas (pesado)
 } = {}): Promise<BackupData> {
-  const { includeImages = false, includePDFs = false } = options
+  const {
+    includeImages = false,
+    includePDFs = false,
+    includeAutographicSignatures = false,
+  } = options
   console.log('[Backup] Iniciando exportación de datos...')
 
   // 1. Obtener cuentas encriptadas de IndexedDB
@@ -276,6 +301,97 @@ export async function exportBackup(options: {
     // No fallar si no hay documentos
   }
 
+  // 8. Configuraciones de API externa (IndexedDB; distinto de apiConfigs en localStorage)
+  const externalApiConfigs: ExternalAPIConfig[] = []
+  try {
+    const db = await openSharedDB()
+    const transaction = db.transaction(['external-api-configs'], 'readonly')
+    const store = transaction.objectStore('external-api-configs')
+    const request = store.getAll()
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        externalApiConfigs.push(...((request.result as ExternalAPIConfig[]) || []))
+        console.log(`[Backup] ✅ ${externalApiConfigs.length} config(s) API externa exportada(s)`)
+        resolve()
+      }
+      request.onerror = () => {
+        console.error('[Backup] ❌ Error al leer external-api-configs:', request.error)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    console.error('[Backup] ❌ Error al acceder a external-api-configs:', error)
+  }
+
+  // 9. Cola de documentos (offline / pendientes)
+  const documentQueue: DocumentQueueItem[] = []
+  try {
+    const db = await openSharedDB()
+    const transaction = db.transaction(['document-queue'], 'readonly')
+    const store = transaction.objectStore('document-queue')
+    const request = store.getAll()
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        documentQueue.push(...((request.result as DocumentQueueItem[]) || []))
+        console.log(`[Backup] ✅ ${documentQueue.length} elemento(s) de cola exportado(s)`)
+        resolve()
+      }
+      request.onerror = () => {
+        console.error('[Backup] ❌ Error al leer document-queue:', request.error)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    console.error('[Backup] ❌ Error al acceder a document-queue:', error)
+  }
+
+  // 10. Firmas autográficas (base64 opcional)
+  const autographicSignatures: AutographicSignature[] = []
+  try {
+    const db = await openSharedDB()
+    const transaction = db.transaction(['autographic-signatures'], 'readonly')
+    const store = transaction.objectStore('autographic-signatures')
+    const request = store.getAll()
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        const raw = (request.result as AutographicSignature[]) || []
+        autographicSignatures.push(
+          ...raw.map(s => sanitizeAutographicSignature(s, includeAutographicSignatures))
+        )
+        console.log(`[Backup] ✅ ${autographicSignatures.length} firma(s) autográfica(s) exportada(s)`)
+        resolve()
+      }
+      request.onerror = () => {
+        console.error('[Backup] ❌ Error al leer autographic-signatures:', request.error)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    console.error('[Backup] ❌ Error al acceder a autographic-signatures:', error)
+  }
+
+  // 11. Emergencias (montañismo / Lumo)
+  const emergencies: Emergency[] = []
+  try {
+    const db = await openSharedDB()
+    const transaction = db.transaction(['emergencies'], 'readonly')
+    const store = transaction.objectStore('emergencies')
+    const request = store.getAll()
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        emergencies.push(...((request.result as Emergency[]) || []))
+        console.log(`[Backup] ✅ ${emergencies.length} emergencia(s) exportada(s)`)
+        resolve()
+      }
+      request.onerror = () => {
+        console.error('[Backup] ❌ Error al leer emergencies:', request.error)
+        reject(request.error)
+      }
+    })
+  } catch (error) {
+    console.error('[Backup] ❌ Error al acceder a emergencies:', error)
+  }
+
   const backup: BackupData = {
     version: BACKUP_VERSION,
     createdAt: Date.now(),
@@ -286,11 +402,16 @@ export async function exportBackup(options: {
     apiConfigs,
     mountainLogs: mountainLogs.length > 0 ? mountainLogs : undefined,
     documents: documents.length > 0 ? documents : undefined,
+    externalApiConfigs: externalApiConfigs.length > 0 ? externalApiConfigs : undefined,
+    documentQueue: documentQueue.length > 0 ? documentQueue : undefined,
+    autographicSignatures: autographicSignatures.length > 0 ? autographicSignatures : undefined,
+    emergencies: emergencies.length > 0 ? emergencies : undefined,
     metadata: {
       appName: 'CriterIA',
       description: 'Backup de datos de CriterIA',
       includesImages: includeImages,
       includesPDFs: includePDFs,
+      includesAutographicSignatures,
     },
   }
 
@@ -306,6 +427,7 @@ export async function exportBackup(options: {
 export async function downloadBackup(options: {
   includeImages?: boolean
   includePDFs?: boolean
+  includeAutographicSignatures?: boolean
 } = {}): Promise<void> {
   try {
     console.log('[Backup] Iniciando exportación...')
@@ -439,6 +561,18 @@ export function readBackupFile(file: File): Promise<BackupData> {
         if (backup.documents && !Array.isArray(backup.documents)) {
           backup.documents = []
         }
+        if (backup.externalApiConfigs && !Array.isArray(backup.externalApiConfigs)) {
+          backup.externalApiConfigs = []
+        }
+        if (backup.documentQueue && !Array.isArray(backup.documentQueue)) {
+          backup.documentQueue = []
+        }
+        if (backup.autographicSignatures && !Array.isArray(backup.autographicSignatures)) {
+          backup.autographicSignatures = []
+        }
+        if (backup.emergencies && !Array.isArray(backup.emergencies)) {
+          backup.emergencies = []
+        }
         
         console.log('[Backup] ✅ Archivo de backup leído y validado')
         resolve(backup)
@@ -470,14 +604,24 @@ export async function importBackup(
     overwriteWebAuthn?: boolean
     overwriteMountainLogs?: boolean
     overwriteDocuments?: boolean
+    overwriteTransactions?: boolean
+    overwriteExternalApiConfigs?: boolean
+    overwriteDocumentQueue?: boolean
+    overwriteAutographicSignatures?: boolean
+    overwriteEmergencies?: boolean
   } = {}
 ): Promise<{
   accountsImported: number
   contactsImported: number
   apiConfigsImported: number
   webauthnImported: number
+  transactionsImported: number
   mountainLogsImported: number
   documentsImported: number
+  externalApiConfigsImported: number
+  documentQueueImported: number
+  autographicSignaturesImported: number
+  emergenciesImported: number
   errors: string[]
 }> {
   console.log('[Backup] Iniciando importación de datos...')
@@ -489,6 +633,10 @@ export async function importBackup(
   let transactionsImported = 0
   let mountainLogsImported = 0
   let documentsImported = 0
+  let externalApiConfigsImported = 0
+  let documentQueueImported = 0
+  let autographicSignaturesImported = 0
+  let emergenciesImported = 0
 
   // 1. Importar cuentas
   if (backup.accounts && backup.accounts.length > 0) {
@@ -761,7 +909,7 @@ export async function importBackup(
             existingRequest.onsuccess = () => {
               clearTimeout(timeout)
               const exists = existingRequest.result !== undefined
-              if (exists && !options.overwriteAccounts) {
+              if (exists && !options.overwriteTransactions) {
                 console.log(`[Backup] ⚠️ Transacción ${tx.id} ya existe, omitiendo`)
                 resolve()
                 return
@@ -984,6 +1132,255 @@ export async function importBackup(
     }
   }
 
+  // 8. Importar configuraciones de API externa (IndexedDB)
+  if (backup.externalApiConfigs && backup.externalApiConfigs.length > 0) {
+    try {
+      console.log(`[Backup] Importando ${backup.externalApiConfigs.length} config(s) de API externa...`)
+      const db = await openSharedDB()
+      const transaction = db.transaction(['external-api-configs'], 'readwrite')
+      const store = transaction.objectStore('external-api-configs')
+
+      for (const cfg of backup.externalApiConfigs) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`[Backup] ⚠️ Timeout verificando external API ${cfg.apiId}`)
+            resolve()
+          }, 5000)
+          try {
+            const existingRequest = store.get(cfg.apiId)
+            existingRequest.onsuccess = () => {
+              clearTimeout(timeout)
+              const exists = existingRequest.result !== undefined
+              if (exists && !options.overwriteExternalApiConfigs) {
+                console.log(`[Backup] ⚠️ External API ${cfg.apiId} ya existe, omitiendo`)
+                resolve()
+                return
+              }
+              const putRequest = store.put(cfg)
+              putRequest.onsuccess = () => {
+                externalApiConfigsImported++
+                console.log(`[Backup] ✅ External API importada: ${cfg.apiId}`)
+                resolve()
+              }
+              putRequest.onerror = () => {
+                const err = putRequest.error || new Error('put')
+                errors.push(`Error al importar external API ${cfg.apiId}: ${err.message}`)
+                resolve()
+              }
+            }
+            existingRequest.onerror = () => {
+              clearTimeout(timeout)
+              errors.push(`Error al verificar external API ${cfg.apiId}`)
+              resolve()
+            }
+          } catch {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
+      }
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => resolve(), 10000)
+        transaction.oncomplete = () => {
+          clearTimeout(timeout)
+          resolve()
+        }
+        transaction.onerror = () => {
+          clearTimeout(timeout)
+          errors.push(`Error en transacción external-api-configs: ${transaction.error?.message || ''}`)
+          resolve()
+        }
+      })
+      await new Promise(r => setTimeout(r, 100))
+    } catch (error) {
+      errors.push(`Error al importar external-api-configs: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  // 9. Cola de documentos
+  if (backup.documentQueue && backup.documentQueue.length > 0) {
+    try {
+      console.log(`[Backup] Importando ${backup.documentQueue.length} elemento(s) de cola...`)
+      const db = await openSharedDB()
+      const transaction = db.transaction(['document-queue'], 'readwrite')
+      const store = transaction.objectStore('document-queue')
+
+      for (const item of backup.documentQueue) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`[Backup] ⚠️ Timeout verificando cola ${item.id}`)
+            resolve()
+          }, 5000)
+          try {
+            const existingRequest = store.get(item.id)
+            existingRequest.onsuccess = () => {
+              clearTimeout(timeout)
+              const exists = existingRequest.result !== undefined
+              if (exists && !options.overwriteDocumentQueue) {
+                resolve()
+                return
+              }
+              const putRequest = store.put(item)
+              putRequest.onsuccess = () => {
+                documentQueueImported++
+                resolve()
+              }
+              putRequest.onerror = () => {
+                errors.push(`Error al importar cola ${item.id}: ${putRequest.error?.message || ''}`)
+                resolve()
+              }
+            }
+            existingRequest.onerror = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+          } catch {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
+      }
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => resolve(), 10000)
+        transaction.oncomplete = () => {
+          clearTimeout(timeout)
+          resolve()
+        }
+        transaction.onerror = () => {
+          clearTimeout(timeout)
+          errors.push(`Error en transacción document-queue: ${transaction.error?.message || ''}`)
+          resolve()
+        }
+      })
+      await new Promise(r => setTimeout(r, 100))
+    } catch (error) {
+      errors.push(`Error al importar document-queue: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  // 10. Firmas autográficas
+  if (backup.autographicSignatures && backup.autographicSignatures.length > 0) {
+    try {
+      console.log(`[Backup] Importando ${backup.autographicSignatures.length} firma(s) autográfica(s)...`)
+      const db = await openSharedDB()
+      const transaction = db.transaction(['autographic-signatures'], 'readwrite')
+      const store = transaction.objectStore('autographic-signatures')
+
+      for (const sig of backup.autographicSignatures) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => resolve(), 5000)
+          try {
+            const existingRequest = store.get(sig.accountAddress)
+            existingRequest.onsuccess = () => {
+              clearTimeout(timeout)
+              const exists = existingRequest.result !== undefined
+              if (exists && !options.overwriteAutographicSignatures) {
+                resolve()
+                return
+              }
+              const putRequest = store.put({
+                ...sig,
+                updatedAt: Date.now(),
+              })
+              putRequest.onsuccess = () => {
+                autographicSignaturesImported++
+                resolve()
+              }
+              putRequest.onerror = () => {
+                errors.push(`Error al importar firma autográfica ${sig.accountAddress}`)
+                resolve()
+              }
+            }
+            existingRequest.onerror = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+          } catch {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
+      }
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => resolve(), 10000)
+        transaction.oncomplete = () => {
+          clearTimeout(timeout)
+          resolve()
+        }
+        transaction.onerror = () => {
+          clearTimeout(timeout)
+          errors.push(`Error en transacción autographic-signatures: ${transaction.error?.message || ''}`)
+          resolve()
+        }
+      })
+      await new Promise(r => setTimeout(r, 100))
+    } catch (error) {
+      errors.push(`Error al importar autographic-signatures: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  // 11. Emergencias
+  if (backup.emergencies && backup.emergencies.length > 0) {
+    try {
+      console.log(`[Backup] Importando ${backup.emergencies.length} emergencia(s)...`)
+      const db = await openSharedDB()
+      const transaction = db.transaction(['emergencies'], 'readwrite')
+      const store = transaction.objectStore('emergencies')
+
+      for (const em of backup.emergencies) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => resolve(), 5000)
+          try {
+            const existingRequest = store.get(em.emergencyId)
+            existingRequest.onsuccess = () => {
+              clearTimeout(timeout)
+              const exists = existingRequest.result !== undefined
+              if (exists && !options.overwriteEmergencies) {
+                resolve()
+                return
+              }
+              const putRequest = store.put({ ...em, updatedAt: em.updatedAt ?? Date.now() })
+              putRequest.onsuccess = () => {
+                emergenciesImported++
+                resolve()
+              }
+              putRequest.onerror = () => {
+                errors.push(`Error al importar emergencia ${em.emergencyId}`)
+                resolve()
+              }
+            }
+            existingRequest.onerror = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+          } catch {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
+      }
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => resolve(), 10000)
+        transaction.oncomplete = () => {
+          clearTimeout(timeout)
+          resolve()
+        }
+        transaction.onerror = () => {
+          clearTimeout(timeout)
+          errors.push(`Error en transacción emergencies: ${transaction.error?.message || ''}`)
+          resolve()
+        }
+      })
+      await new Promise(r => setTimeout(r, 100))
+    } catch (error) {
+      errors.push(`Error al importar emergencies: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   console.log('[Backup] ✅ Importación completada')
   return {
     accountsImported,
@@ -993,6 +1390,10 @@ export async function importBackup(
     transactionsImported,
     mountainLogsImported,
     documentsImported,
+    externalApiConfigsImported,
+    documentQueueImported,
+    autographicSignaturesImported,
+    emergenciesImported,
     errors,
   }
 }

@@ -1,4 +1,4 @@
-# Cuenta CriterIA (backend) vs Cuenta Substrate (wallet local)
+# Cuenta CriterIA (backend) vs cuenta Substrate (llave local)
 
 En CriterIA conviven **dos identidades** distintas. Entender la diferencia es clave.
 
@@ -14,17 +14,17 @@ Es tu **sesión de plataforma** (login):
 
 **Importante**: esta cuenta NO es tu llave criptográfica. Es un usuario “web”.
 
-## 2) Cuenta Substrate (wallet local)
+## 2) Cuenta Substrate (llave local)
 
-Es tu **wallet local** (Substrate keyring):
+Es tu **llave criptográfica local** (Substrate keyring):
 
-- Vive en tu dispositivo (IndexedDB), encriptada con tu contraseña.
+- Vive en tu dispositivo (IndexedDB), cifrada (contraseña local del navegador o protección WebAuthn del dispositivo).
 - Se usa para:
   - autoría verificable
   - firmas locales (cuando aplique)
-  - operaciones criptográficas sin custodios
+  - operaciones criptográficas sin custodia en servidores de CriterIA
 
-Por seguridad, al recargar la app la wallet puede estar **bloqueada** hasta que la desbloqueas.
+Por seguridad, al recargar la app el almacén puede estar **bloqueado** hasta que lo desbloquees.
 
 ## ¿Por qué existen ambas?
 

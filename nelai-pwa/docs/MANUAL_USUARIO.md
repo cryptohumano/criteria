@@ -5,52 +5,53 @@ Este manual describe **qué hace la webapp** y **cómo usarla** desde la perspec
 ## Conceptos clave
 
 - **Sesión de plataforma (SaaS)**: tu sesión de organización (login). Sirve para acceder a funciones del workspace (documentos, agente, etc.).
-- **Wallet local (Substrate keyring)**: tus llaves viven **en tu dispositivo** y se guardan **encriptadas** (IndexedDB).  
-  - Por seguridad, al recargar la app la wallet puede estar **bloqueada** (las llaves privadas no están en memoria).
-  - Para **crear/firmar** documentos, necesitas **desbloquear** la wallet.
+- **Llave local (Substrate keyring)**: tus claves viven **en tu dispositivo** y se guardan **cifradas** (IndexedDB).  
+  - Por seguridad, al recargar la app el almacén puede estar **bloqueado** (las claves privadas no están en memoria).
+  - Para **crear o firmar** documentos, necesitas **desbloquear** ese almacén.
 
 ## Inicio rápido
 
 1. **Inicia sesión** (si aplica).
-2. Si ves el aviso **“Wallet bloqueada”**, pulsa **Desbloquear** y escribe tu contraseña (o WebAuthn si está disponible).
+2. Si ves **«Llave local bloqueada»**, pulsa **Desbloquear** y usa **WebAuthn** (huella, rostro o PIN del dispositivo) o la **contraseña del almacén local**, según cómo lo configuraste.
 3. Ve a **Documentos** → **Crear documento**.
 4. Edita el documento en el editor colaborativo (Etherpad).
 5. Cuando necesites, usa **Exportar Markdown**.
 
-## Wallet: bloqueo, desbloqueo y cuentas
+## Llave local: bloqueo, desbloqueo y cuentas
 
 ### ¿Por qué se bloquea al recargar?
 
-La app no mantiene llaves privadas en memoria permanentemente. Tras un refresh (o al abrir en un dispositivo nuevo) la wallet vuelve a estado **bloqueado**.
+La app no mantiene claves privadas en memoria de forma permanente. Tras un refresco (o al abrir en un dispositivo nuevo) el almacén vuelve a estado **bloqueado**.
 
-### Cómo desbloquear (sin ir a “Cuentas”)
+### Cómo desbloquear (sin ir a «Cuentas»)
 
-Cuando la app detecta que existe una wallet guardada pero está bloqueada, verás un banner:
+Cuando la app detecta que ya hay un almacén guardado pero está bloqueado, verás un banner:
 
-- **Wallet bloqueada** → botón **Desbloquear**
+- **Llave local bloqueada** → botón **Desbloquear**
 
 Al desbloquear:
 
 - el banner desaparece
-- ya puedes crear/firmar documentos
+- ya puedes crear o firmar documentos
 
-### Una sola contraseña por wallet (vault)
+### Protección del almacén
 
-La wallet del dispositivo funciona como un **vault**: todas las cuentas guardadas comparten **una sola contraseña**.
+Puede ser de dos maneras (según lo que elegiste al crear la primera identidad en este navegador):
 
-- **Crear una cuenta adicional**: usa la **misma contraseña** que usas para desbloquear.
-- **Importar una cuenta**: si el vault ya existe, la contraseña del wallet es **requerida**.
+- **WebAuthn (recomendado en navegadores compatibles)**: no hace falta inventar una segunda contraseña para el vault; el dispositivo pide huella, rostro o PIN.
+- **Contraseña solo en el navegador**: una contraseña **local** cifra el vault; **no es** la contraseña del login de la plataforma.
 
-Esto evita un problema clásico: “solo funciona la última contraseña”.
+Todas las cuentas guardadas en ese dispositivo comparten **el mismo tipo de protección** del vault.
+
+### Ver la frase de recuperación
+
+En **Configuración → Seguridad → Frase de recuperación** puedes mostrar la frase cuando la necesites (con WebAuthn o con la contraseña del almacén, según corresponda).
 
 ### Crear una cuenta (primera vez)
 
-Si es tu primera vez (no hay cuentas guardadas):
-
-1. Ve a **Cuentas** → **Crear cuenta**
-2. Genera una frase de recuperación (mnemonic)
-3. Guarda la frase en un lugar seguro
-4. Define una contraseña (esta se convierte en la contraseña del vault del dispositivo)
+1. Ve a **Cuentas** → **Crear cuenta** (flujo clásico con frase visible), **o** deja que el asistente cree la identidad al abrir un documento (flujo breve con WebAuthn o contraseña local, según el navegador).
+2. Si el flujo te muestra la frase, guárdala en un lugar seguro.
+3. Si usas solo contraseña local, esa será la del vault en este equipo.
 
 ### Importar una cuenta
 
@@ -62,7 +63,8 @@ Ve a **Cuentas** → **Importar** y elige un método:
 
 Si el dispositivo ya tiene vault:
 
-- se te pedirá la **contraseña del wallet** para poder guardar la cuenta importada
+- con **WebAuthn**, se pedirá verificación del dispositivo para guardar la cuenta importada;
+- con **contraseña local**, se pedirá esa contraseña.
 
 ## Documentos
 
@@ -111,22 +113,22 @@ El panel del **Agente** trabaja sobre el texto del pad. Flujo recomendado:
 
 ## Solución de problemas (FAQ)
 
-### “No puedo crear documentos después de recargar”
+### «No puedo crear documentos después de recargar»
 
-Causa: la wallet está **bloqueada**.
+Causa: el almacén de la llave local está **bloqueado**.
 
-Solución: usa el banner **Wallet bloqueada → Desbloquear**.
+Solución: usa el banner **Llave local bloqueada → Desbloquear**.
 
-### “Me pide crear cuenta cuando ya tenía cuentas”
+### «Me pide crear cuenta cuando ya tenía cuentas»
 
 Normalmente indica:
 
 - vault no accesible temporalmente (IndexedDB/permiso), o
-- la wallet está bloqueada y aún no se desbloqueó
+- el almacén sigue bloqueado y aún no se desbloqueó
 
 Solución: desbloquear desde el banner; si persiste, revisar permisos del navegador (almacenamiento/cookies) o probar en una ventana normal (no incógnito).
 
-### “Warnings de traducción en consola (Etherpad plugins)”
+### «Warnings de traducción en consola (Etherpad plugins)»
 
 Son warnings de i18n del editor (no afectan el funcionamiento). Se pueden personalizar después.
 
@@ -138,6 +140,3 @@ Este documento es para usuarios. Para operación técnica/verificación de setup
 
 - `../README.md` (visión general del paquete)
 - `../server/README.md` (backend/API)
-- `../RAILWAY_DEPLOY.md` (despliegue en Railway)
-- `KEYRING_FLOW.md` (flujo de keyring)
-

@@ -5,27 +5,33 @@ import type { Document } from '@/types/documents'
 import type { AgentProfile } from '@/services/criteria/systemPrompts'
 import {
   AGENT_PROFILE_TAG_ACADEMIC_ES,
+  AGENT_PROFILE_TAG_CREATOR_ES,
   AGENT_PROFILE_TAG_LEGAL_MX,
 } from '@/services/criteria/systemPrompts'
 
-export type CriteriaDomain = 'legal' | 'academic'
+export type CriteriaDomain = 'legal' | 'academic' | 'creator'
 
 export function inferCriteriaDomain(doc: Document): CriteriaDomain {
   const raw = doc.metadata.criteriaDomain
-  if (raw === 'legal' || raw === 'academic') return raw
+  if (raw === 'legal' || raw === 'academic' || raw === 'creator') return raw
   const ks = doc.metadata.keywords ?? []
   if (ks.includes(AGENT_PROFILE_TAG_LEGAL_MX)) return 'legal'
+  if (ks.includes(AGENT_PROFILE_TAG_CREATOR_ES)) return 'creator'
   if (ks.includes(AGENT_PROFILE_TAG_ACADEMIC_ES)) return 'academic'
   if (doc.type === 'contract') return 'legal'
   return 'academic'
 }
 
 export function criteriaDomainLabel(d: CriteriaDomain): string {
-  return d === 'legal' ? 'Legal' : 'Académico'
+  if (d === 'legal') return 'Legal'
+  if (d === 'creator') return 'Contenido'
+  return 'Académico'
 }
 
 export function criteriaDomainFromAgentProfile(profile: AgentProfile): CriteriaDomain {
-  return profile === 'legal_mx' ? 'legal' : 'academic'
+  if (profile === 'legal_mx') return 'legal'
+  if (profile === 'creator_es') return 'creator'
+  return 'academic'
 }
 
 /** Parsea "foo, bar baz" → tags únicos en minúsculas (guiones por espacios). */

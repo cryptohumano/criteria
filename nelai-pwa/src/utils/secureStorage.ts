@@ -15,9 +15,13 @@ const DB_VERSION = 4 // Actualizado para coincidir con la versión actual de la 
 const STORE_NAME = 'encrypted-accounts'
 const WEBAUTHN_STORE_NAME = 'webauthn-credentials'
 
+export type VaultCipherKind = 'password' | 'webauthn'
+
 export interface EncryptedAccount {
   address: string // Clave primaria (keyPath)
   encryptedData: string // JSON encriptado con la clave privada (seed/mnemonic)
+  /** Cómo se encriptó `encryptedData`. Ausente = legado (`password` / PBKDF2). */
+  vaultCipher?: VaultCipherKind
   publicKey: string // Public key en hex
   type?: 'sr25519' | 'ed25519' | 'ecdsa' // Tipo de criptografía
   ethereumAddress?: string // Dirección Ethereum derivada (opcional)

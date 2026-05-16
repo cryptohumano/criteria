@@ -17,12 +17,16 @@ export interface UnlockProps {
 }
 
 export function Unlock({ variant = 'page' }: UnlockProps) {
-  const { unlock, unlockWithWebAuthn, hasWebAuthnCredentials } = useKeyringContext()
+  const { unlock, unlockWithWebAuthn, hasWebAuthnCredentials, vaultCipherSummary, hasStoredAccounts } =
+    useKeyringContext()
   const isDialog = variant === 'dialog'
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  const vaultIsWebAuthnOnly = hasStoredAccounts && vaultCipherSummary === 'webauthn'
+  const defaultTab = vaultIsWebAuthnOnly && hasWebAuthnCredentials ? 'webauthn' : 'password'
 
   const handleUnlock = async () => {
     setError('')
@@ -166,7 +170,7 @@ export function Unlock({ variant = 'page' }: UnlockProps) {
                   isDialog ? 'text-xs leading-snug sm:text-sm' : 'text-sm leading-relaxed',
                 )}
               >
-                Tu wallet cifrada está en este dispositivo. Desbloquéala para firmar documentos y usar tus cuentas
+                Tu almacén cifrado está en este dispositivo. Desbloquéalo para firmar documentos y usar tus cuentas
                 Substrate.
               </p>
             </div>
@@ -196,23 +200,25 @@ export function Unlock({ variant = 'page' }: UnlockProps) {
                   <Lock className="h-5 w-5 text-primary" aria-hidden />
                 </div>
                 <div className="min-w-0">
-                  <CardTitle className="text-xl font-semibold leading-tight">Desbloquear wallet</CardTitle>
+                  <CardTitle className="text-xl font-semibold leading-tight">Desbloquear llave local</CardTitle>
                 </div>
               </div>
             )}
             <CardDescription>
-              Introduce tu contraseña para acceder
-              {hasWebAuthnCredentials ? ' o usa WebAuthn.' : '.'}
+              {vaultIsWebAuthnOnly
+                ? 'Este almacén está protegido con tu dispositivo (WebAuthn). Usa huella, rostro o PIN; la contraseña no aplica para este vault.'
+                : `Introduce tu contraseña para acceder${hasWebAuthnCredentials ? ' o usa WebAuthn.' : '.'}`}
             </CardDescription>
             <Alert className="border-primary/20 bg-muted/40 py-2">
               <AlertDescription className="break-words text-xs leading-snug sm:text-sm">
-                <span className="font-medium text-foreground">Backup:</span> si importaste un respaldo, usa la misma
-                contraseña que al exportarlo.
+                <span className="font-medium text-foreground">Copia de seguridad:</span> si importaste un respaldo
+                cifrado con contraseña, usa la misma contraseña del almacén local. Los vault solo con WebAuthn no
+                usan este campo.
               </AlertDescription>
             </Alert>
           </CardHeader>
           <CardContent className={cn(isDialog ? '!p-0 pt-1' : 'pb-6')}>
-            <Tabs defaultValue="password" className="w-full">
+            <Tabs key={defaultTab} defaultValue={defaultTab} className="w-full">
               <TabsList
                 className={cn(
                   '!grid h-auto min-h-9 w-full gap-1 p-1',
@@ -251,7 +257,7 @@ export function Unlock({ variant = 'page' }: UnlockProps) {
                             handleUnlock()
                           }
                         }}
-                        placeholder="Contraseña del vault"
+                        placeholder="Contraseña del almacén local"
                         className="pr-10"
                         autoComplete="current-password"
                       />

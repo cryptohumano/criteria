@@ -47,22 +47,30 @@ export function stripAndParseDocumentScore(assistantText: string): {
 
 /** Último score en un historial guardado (mensajes con `documentScore` o texto con bloque). */
 /** Textos de UI según ámbito (el bloque técnico sigue siendo SCORE_LEGAL). */
-export function documentScoreUiLabels(domain: 'legal' | 'academic'): {
+export function documentScoreUiLabels(domain: 'legal' | 'academic' | 'creator'): {
   panelTitle: string
   confidence: string
   risksTitle: string
 } {
-  return domain === 'legal'
-    ? {
-        panelTitle: 'Puntuación legal',
-        confidence: 'Confianza',
-        risksTitle: 'Riesgos detectados',
-      }
-    : {
-        panelTitle: 'Calidad académica',
-        confidence: 'Nivel',
-        risksTitle: 'Aspectos a mejorar',
-      }
+  if (domain === 'legal') {
+    return {
+      panelTitle: 'Puntuación legal',
+      confidence: 'Confianza',
+      risksTitle: 'Riesgos detectados',
+    }
+  }
+  if (domain === 'creator') {
+    return {
+      panelTitle: 'Calidad editorial',
+      confidence: 'Nivel',
+      risksTitle: 'Aspectos a mejorar',
+    }
+  }
+  return {
+    panelTitle: 'Calidad académica',
+    confidence: 'Nivel',
+    risksTitle: 'Aspectos a mejorar',
+  }
 }
 
 export function lastDocumentScoreFromChatHistory(

@@ -1,6 +1,6 @@
 import { createContext, useContext, ReactNode } from 'react'
 import { useKeyring } from '@/hooks/useKeyring'
-import type { KeyringAccount } from '@/hooks/useKeyring'
+import type { KeyringAccount, VaultCipherSummary } from '@/hooks/useKeyring'
 
 interface KeyringContextType {
   keyring: ReturnType<typeof useKeyring>['keyring']
@@ -11,6 +11,7 @@ interface KeyringContextType {
   storedAccountsStatus: ReturnType<typeof useKeyring>['storedAccountsStatus']
   storedAccountsError: ReturnType<typeof useKeyring>['storedAccountsError']
   hasWebAuthnCredentials: boolean
+  vaultCipherSummary: VaultCipherSummary
   generateMnemonic: () => string
   unlock: (password: string) => Promise<boolean>
   unlockWithWebAuthn: (credentialId: string) => Promise<boolean>
@@ -19,6 +20,15 @@ interface KeyringContextType {
   addFromUri: (uri: string, name?: string, type?: 'sr25519' | 'ed25519' | 'ecdsa', password?: string) => Promise<KeyringAccount | null>
   addFromJson: (jsonData: object, jsonPassword: string, password?: string) => Promise<KeyringAccount | null>
   removeAccount: (address: string) => Promise<boolean>
+  createIdentityWithWebAuthn: (opts?: {
+    userName?: string
+    displayName?: string
+    accountLabel?: string
+  }) => Promise<KeyringAccount | null>
+  exportMnemonicForAccount: (
+    address: string,
+    vaultPassword?: string,
+  ) => Promise<{ kind: 'mnemonic' | 'uri' | 'none'; secret: string | null; reason?: string }>
   getAccount: (address: string) => KeyringAccount | undefined
   getDerivedEthereumAddress: (address: string) => string | null
   setSS58Format: (format: number) => void

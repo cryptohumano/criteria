@@ -94,8 +94,8 @@ export interface DocumentMetadata {
   author?: string                      // Dirección del creador
   subject?: string
   keywords?: string[]
-  /** Ámbito CriterIA para listados y filtros (Legal vs Académico). */
-  criteriaDomain?: 'legal' | 'academic'
+  /** Ámbito CriterIA para listados y filtros (Legal, Académico, Creador). */
+  criteriaDomain?: 'legal' | 'academic' | 'creator'
   /** Etiquetas libres del usuario (normalizadas en minúsculas al guardar). */
   userTags?: string[]
   language?: string

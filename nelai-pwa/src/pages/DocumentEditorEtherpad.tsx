@@ -35,6 +35,7 @@ import {
   Loader2,
   ChevronDown,
   X,
+  Upload,
 } from 'lucide-react'
 
 import { createDocument, updateDocumentContent } from '@/services/documents/DocumentService'
@@ -76,6 +77,7 @@ import {
   downloadResearchEvidenceJson,
   extractHttpUrlsFromText,
   normalizeResearchEvidenceLog,
+  parseResearchEvidenceLogImportJson,
 } from '@/utils/researchEvidenceLog'
 import type { ResearchEvidenceLogEntry } from '@/types/documents'
 import { criteriaDomainFromAgentProfile, documentEditorPath } from '@/utils/documentListing'
@@ -200,6 +202,7 @@ export default function DocumentEditorEtherpad() {
   const [editorTourOpen, setEditorTourOpen] = useState(false)
   const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
   const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
+  const importResearchEvidenceInputRef = useRef<HTMLInputElement>(null)
 
   const agentScoreLabels = useMemo(
     () => documentScoreUiLabels(criteriaDomainFromAgentProfile(agentProfile)),
@@ -417,6 +420,7 @@ export default function DocumentEditorEtherpad() {
             documentType: doc.type,
             keywords: doc.metadata?.keywords,
             category: doc.category,
+            criteriaDomain: doc.metadata?.criteriaDomain,
           }),
         )
 
@@ -577,6 +581,51 @@ export default function DocumentEditorEtherpad() {
       } catch (e) {
         console.warn('[Etherpad] nota en bitácora', e)
         toast.error('No se pudo guardar la nota')
+      }
+    },
+    [documentId],
+  )
+
+  const handlePickImportResearchEvidenceJson = useCallback(() => {
+    if (!documentId) {
+      toast.error('Abre un documento guardado para importar fuentes')
+      return
+    }
+    importResearchEvidenceInputRef.current?.click()
+  }, [documentId])
+
+  const handleImportResearchEvidenceJsonChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file || !documentId) return
+      try {
+        const text = await file.text()
+        const { entries, skipped } = parseResearchEvidenceLogImportJson(text, documentId)
+        if (!entries.length) {
+          toast.message('El archivo no contiene entradas válidas para importar')
+          return
+        }
+        const doc = await getDocument(documentId)
+        if (!doc) {
+          toast.error('Documento no encontrado')
+          return
+        }
+        const prevLen = normalizeResearchEvidenceLog(doc.researchEvidenceLog).length
+        const merged = appendResearchEvidenceEntries(doc.researchEvidenceLog, entries)
+        await updateDocument(documentId, { researchEvidenceLog: merged })
+        setResearchEvidenceLog(merged)
+        const added = merged.length - prevLen
+        if (added === 0) {
+          toast.message('Ninguna fila nueva: los ids del JSON ya existen en esta bitácora.')
+        } else {
+          toast.success(`Se añadieron ${added} fuente(s) a la bitácora`)
+        }
+        if (skipped > 0) {
+          toast.message(`Se omitieron ${skipped} fila(s) inválida(s) en el JSON`)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Error al importar JSON')
       }
     },
     [documentId],
@@ -1103,7 +1152,7 @@ export default function DocumentEditorEtherpad() {
           metadata: {
             ...doc.metadata,
             keywords: nextKeywords,
-            criteriaDomain: next === 'legal_mx' ? 'legal' : 'academic',
+            criteriaDomain: criteriaDomainFromAgentProfile(next),
           },
         })
         toast.success('Perfil del agente actualizado')
@@ -1224,6 +1273,7 @@ export default function DocumentEditorEtherpad() {
                 <SelectContent>
                   <SelectItem value="academic_es">Académico (ensayos e investigación)</SelectItem>
                   <SelectItem value="legal_mx">Legal MX (contratos y revisión legal)</SelectItem>
+                  <SelectItem value="creator_es">Creador de contenido (redes, guiones, newsletters)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1345,7 +1395,7 @@ export default function DocumentEditorEtherpad() {
               <Label>Perfil del agente</Label>
               <Select
                 value={agentProfile}
-                onValueChange={(v) => setAgentProfile(v as 'legal_mx' | 'academic_es')}
+                onValueChange={(v) => setAgentProfile(v as AgentProfile)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un perfil" />
@@ -1353,6 +1403,7 @@ export default function DocumentEditorEtherpad() {
                 <SelectContent>
                   <SelectItem value="academic_es">Académico (ensayos e investigación)</SelectItem>
                   <SelectItem value="legal_mx">Legal MX (contratos y revisión legal)</SelectItem>
+                  <SelectItem value="creator_es">Creador de contenido (redes, guiones, newsletters)</SelectItem>
                 </SelectContent>
               </Select>
               <div className="text-xs text-muted-foreground">
@@ -1990,10 +2041,20 @@ export default function DocumentEditorEtherpad() {
               Bitácora de fuentes
             </DialogTitle>
             <DialogDescription>
-              URLs registradas desde el agente (Etherpad). Se guardan en el documento local.
+              URLs registradas desde el agente (Etherpad). Se guardan en el documento local. Puedes importar el mismo
+              formato que «Exportar JSON»; las entradas se fusionan sin duplicar ids.
             </DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
+            <input
+              ref={importResearchEvidenceInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              aria-hidden
+              tabIndex={-1}
+              onChange={handleImportResearchEvidenceJsonChange}
+            />
             <Button
               type="button"
               size="sm"
@@ -2001,6 +2062,17 @@ export default function DocumentEditorEtherpad() {
               onClick={() => downloadResearchEvidenceJson(researchEvidenceLog, documentId || 'documento')}
             >
               Exportar JSON
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handlePickImportResearchEvidenceJson}
+              disabled={!documentId}
+              title={!documentId ? 'Requiere documento guardado' : undefined}
+            >
+              <Upload className="h-4 w-4 mr-1.5" aria-hidden />
+              Importar JSON
             </Button>
             <Button
               type="button"

@@ -1,4 +1,5 @@
 import type {
+  ResearchEvidenceDocumentAnchor,
   ResearchEvidenceLogEntry,
   ResearchEvidenceLogOrigin,
 } from '@/types/documents'
@@ -424,4 +425,152 @@ export function downloadResearchEvidenceCsv(
   a.download = `fuentes-${filenameBase}.csv`
   a.click()
   URL.revokeObjectURL(a.href)
+}
+
+const IMPORT_ORIGINS: ReadonlySet<ResearchEvidenceLogOrigin> = new Set([
+  'user_message',
+  'assistant_message',
+  'user_attachment',
+  'document_scan',
+])
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function strField(v: unknown, maxLen: number): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const t = v.trim()
+  if (!t) return undefined
+  return t.length > maxLen ? t.slice(0, maxLen) : t
+}
+
+function numField(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim()) {
+    const n = Number(v)
+    if (Number.isFinite(n)) return n
+  }
+  return undefined
+}
+
+function parseImportedAnchor(raw: unknown): ResearchEvidenceDocumentAnchor | undefined {
+  if (!isPlainObject(raw)) return undefined
+  const anchor: ResearchEvidenceDocumentAnchor = {}
+  const dv = numField(raw.documentVersion)
+  if (dv !== undefined && dv >= 0) anchor.documentVersion = Math.floor(dv)
+  const ph = strField(raw.pdfHash, 512)
+  if (ph) anchor.pdfHash = ph
+  const eh = strField(raw.excerptHash, 512)
+  if (eh) anchor.excerptHash = eh
+  return Object.keys(anchor).length > 0 ? anchor : undefined
+}
+
+/**
+ * Interpreta un objeto JSON (p. ej. archivo de «Exportar JSON») y devuelve entradas listas para fusionar
+ * en el documento `targetDocumentId` (se ignora el `documentId` que traía cada fila al exportar).
+ */
+export function parseResearchEvidenceLogImportJson(
+  rawText: string,
+  targetDocumentId: string
+): { entries: ResearchEvidenceLogEntry[]; skipped: number } {
+  if (!targetDocumentId.trim()) {
+    throw new Error('Se requiere un identificador de documento para importar la bitácora.')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawText)
+  } catch {
+    throw new Error('El archivo no es JSON válido.')
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('El JSON debe ser un array de entradas (mismo formato que «Exportar JSON»).')
+  }
+
+  let skipped = 0
+  const entries: ResearchEvidenceLogEntry[] = []
+
+  for (const item of parsed) {
+    if (!isPlainObject(item)) {
+      skipped += 1
+      continue
+    }
+
+    const idRaw = strField(item.id, 200)
+    const id =
+      idRaw && idRaw.length > 0
+        ? idRaw
+        : typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `ev_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+
+    const urlRaw = typeof item.url === 'string' ? item.url.trim() : ''
+    const url =
+      urlRaw && (urlRaw.startsWith('http://') || urlRaw.startsWith('https://'))
+        ? urlRaw
+        : absoluteHttpUrlFromLooseTarget(urlRaw)
+    if (!url || url.startsWith('data:')) {
+      skipped += 1
+      continue
+    }
+
+    const originRaw = item.origin
+    const origin =
+      typeof originRaw === 'string' && IMPORT_ORIGINS.has(originRaw as ResearchEvidenceLogOrigin)
+        ? (originRaw as ResearchEvidenceLogOrigin)
+        : null
+    if (!origin) {
+      skipped += 1
+      continue
+    }
+
+    const createdAt = numField(item.createdAt)
+    if (createdAt === undefined) {
+      skipped += 1
+      continue
+    }
+
+    const accessedAt = numField(item.accessedAt)
+    const chatHistoryIndex = numField(item.chatHistoryIndex)
+    const entry: ResearchEvidenceLogEntry = {
+      id,
+      documentId: targetDocumentId,
+      createdAt,
+      url,
+      origin,
+    }
+
+    if (accessedAt !== undefined) entry.accessedAt = accessedAt
+    const canonicalUrl = strField(item.canonicalUrl, 4096)
+    if (canonicalUrl) entry.canonicalUrl = canonicalUrl
+    const title = strField(item.title, 2000)
+    if (title) entry.title = title
+    const snippet = strField(item.snippet, 8000)
+    if (snippet) entry.snippet = snippet
+    const indexedFromUserPrompt = strField(item.indexedFromUserPrompt, 8000)
+    if (indexedFromUserPrompt) entry.indexedFromUserPrompt = indexedFromUserPrompt
+    const userComment = strField(item.userComment, 8000)
+    if (userComment) entry.userComment = userComment
+    const addedBy = strField(item.addedBy, 512)
+    if (addedBy) entry.addedBy = addedBy
+    const supersedesId = strField(item.supersedesId, 200)
+    if (supersedesId) entry.supersedesId = supersedesId
+
+    if (chatHistoryIndex !== undefined && Number.isFinite(chatHistoryIndex)) {
+      entry.chatHistoryIndex = Math.floor(chatHistoryIndex)
+    }
+
+    const anchor = parseImportedAnchor(item.anchor)
+    if (anchor) entry.anchor = anchor
+
+    entries.push(entry)
+  }
+
+  if (entries.length === 0 && parsed.length > 0) {
+    throw new Error(
+      'No se importó ninguna entrada: revisa que el JSON sea el exportado desde CriterIA (url, origin y createdAt obligatorios).',
+    )
+  }
+
+  return { entries, skipped }
 }

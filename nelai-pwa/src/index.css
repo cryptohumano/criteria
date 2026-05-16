@@ -7,40 +7,40 @@
 :root {
   --radius: 0.5rem;
 
-  /* Light Mode - Paleta criterIA (teal + índigo) */
-  --background: 160 20% 98%;        /* Fondo neutro con tinte verde suave */
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 166 76% 32%;           /* Teal: #0D9488 - verificación, confianza */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 239 84% 67%;            /* Índigo: #6366F1 - identidad */
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 166 76% 32%;
-  --chart-1: 166 76% 32%;
-  --chart-2: 239 84% 67%;
-  --chart-3: 197 37% 24%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
-  /* Sidebar variables */
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 222.2 84% 4.9%;
-  --sidebar-primary: 166 76% 32%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 14% 96%;
-  --sidebar-accent-foreground: 222.2 47.4% 11.2%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-ring: 166 76% 32%;
+  /* Light Mode — editorial cálida (papel cálido + tinta fría, lectura prolongada) */
+  --background: 42 24% 97%;
+  --foreground: 222 16% 15%;
+  --card: 40 20% 99%;
+  --card-foreground: 222 16% 15%;
+  --popover: 40 20% 99%;
+  --popover-foreground: 222 16% 15%;
+  --primary: 220 20% 36%;
+  --primary-foreground: 40 30% 98%;
+  --secondary: 40 14% 93%;
+  --secondary-foreground: 222 16% 15%;
+  --muted: 40 14% 93%;
+  --muted-foreground: 220 10% 40%;
+  --accent: 40 12% 91%;
+  --accent-foreground: 222 16% 15%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 40 30% 98%;
+  --border: 38 16% 88%;
+  --input: 38 16% 88%;
+  --ring: 220 20% 36%;
+  --chart-1: 220 20% 36%;
+  --chart-2: 220 16% 46%;
+  --chart-3: 222 12% 30%;
+  --chart-4: 218 14% 50%;
+  --chart-5: 38 18% 52%;
+  /* Sidebar */
+  --sidebar: 40 20% 99%;
+  --sidebar-foreground: 222 16% 15%;
+  --sidebar-primary: 220 20% 36%;
+  --sidebar-primary-foreground: 40 30% 98%;
+  --sidebar-accent: 40 12% 91%;
+  --sidebar-accent-foreground: 222 16% 15%;
+  --sidebar-border: 38 16% 88%;
+  --sidebar-ring: 220 20% 36%;
 }
 
 * {
@@ -63,41 +63,41 @@ body {
   }
 }
 
-/* Dark Mode - Paleta criterIA */
+/* Dark Mode — fondo frío + texto ligeramente cálido (menos fatiga periférica) */
 .dark {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --card: 222 33% 15%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222 33% 15%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 166 76% 45%;           /* Teal más claro en dark */
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 20% 25%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 239 84% 67%;            /* Índigo */
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217 30% 25%;
-  --input: 217 30% 25%;
-  --ring: 166 76% 45%;
-  --chart-1: 166 76% 45%;
-  --chart-2: 239 84% 67%;
-  --chart-3: 30 80% 55%;
-  --chart-4: 280 65% 60%;
-  --chart-5: 340 75% 55%;
-  /* Sidebar variables para dark mode */
-  --sidebar: 222 33% 15%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 166 76% 45%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 217 20% 25%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217 30% 25%;
-  --sidebar-ring: 166 76% 45%;
+  --background: 222 14% 12%;
+  --foreground: 45 18% 93%;
+  --card: 222 12% 15%;
+  --card-foreground: 45 14% 93%;
+  --popover: 222 12% 15%;
+  --popover-foreground: 45 14% 93%;
+  --primary: 218 18% 62%;
+  --primary-foreground: 222 16% 10%;
+  --secondary: 222 10% 18%;
+  --secondary-foreground: 45 14% 93%;
+  --muted: 222 10% 18%;
+  --muted-foreground: 220 8% 65%;
+  --accent: 222 10% 20%;
+  --accent-foreground: 45 14% 93%;
+  --destructive: 0 55% 40%;
+  --destructive-foreground: 45 14% 93%;
+  --border: 222 10% 22%;
+  --input: 222 10% 22%;
+  --ring: 218 18% 62%;
+  --chart-1: 218 18% 62%;
+  --chart-2: 220 14% 54%;
+  --chart-3: 222 10% 70%;
+  --chart-4: 215 12% 48%;
+  --chart-5: 40 12% 58%;
+  /* Sidebar */
+  --sidebar: 222 12% 15%;
+  --sidebar-foreground: 45 14% 93%;
+  --sidebar-primary: 218 18% 62%;
+  --sidebar-primary-foreground: 222 16% 10%;
+  --sidebar-accent: 222 10% 20%;
+  --sidebar-accent-foreground: 45 14% 93%;
+  --sidebar-border: 222 10% 22%;
+  --sidebar-ring: 218 18% 62%;
 }
 
 /* Exponer variables a Tailwind CSS v4 */

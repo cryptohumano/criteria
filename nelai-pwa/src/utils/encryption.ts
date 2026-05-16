@@ -141,6 +141,34 @@ export async function verifyPassword(encryptedHex: string, password: string): Pr
 /**
  * Desencripta datos usando una CryptoKey directamente (para WebAuthn)
  */
+/**
+ * Encripta texto con una CryptoKey AES-GCM (mismo formato hex que `decryptWithKey`).
+ * El prefijo salt+iv se conserva por compatibilidad con el layout de `encrypt()` por contraseña;
+ * la clave ya viene derivada (p. ej. WebAuthn) y no se usa PBKDF2 sobre ese salt.
+ */
+export async function encryptWithKey(plaintext: string, key: CryptoKey): Promise<string> {
+  ensureCryptoAvailable()
+  const salt = randomBytes(SALT_LENGTH)
+  const iv = randomBytes(IV_LENGTH)
+  const data = new TextEncoder().encode(plaintext)
+
+  const encrypted = await crypto.subtle!.encrypt(
+    {
+      name: ALGORITHM,
+      iv,
+    },
+    key,
+    data,
+  )
+
+  const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength)
+  combined.set(salt, 0)
+  combined.set(iv, salt.length)
+  combined.set(new Uint8Array(encrypted), salt.length + iv.length)
+
+  return u8aToHex(combined)
+}
+
 export async function decryptWithKey(encryptedHex: string, key: CryptoKey): Promise<string> {
   const { hexToU8a } = await import('@polkadot/util')
   const combined = hexToU8a(encryptedHex)

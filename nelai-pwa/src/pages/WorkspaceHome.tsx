@@ -15,11 +15,13 @@ import {
   Bot,
   Users,
   Fingerprint,
+  Lock,
   Loader2,
   PlusCircle,
   List,
   Scale,
   GraduationCap,
+  PenLine,
   Info,
 } from 'lucide-react'
 import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
@@ -235,11 +237,15 @@ export default function WorkspaceHome() {
                       <strong className="text-foreground">Académico</strong> abre el mismo editor con perfil académico y
                       el panel del agente listo para pegar texto o adjuntar archivos.
                     </span>
+                    <span>
+                      <strong className="text-foreground">Creador de contenido</strong> abre el editor con perfil para
+                      redes, guiones, newsletters y piezas editoriales, con bitácora de fuentes cuando cites enlaces.
+                    </span>
                   </span>
                 </InfoTip>
               </div>
               <div
-                className="flex flex-col gap-2 sm:grid sm:grid-cols-2 sm:gap-2 lg:grid-cols-3"
+                className="flex flex-col gap-2 sm:grid sm:grid-cols-2 sm:gap-2 lg:grid-cols-4"
                 data-tour-id="tour-documents-secondary-actions"
               >
                 <Button asChild size="default" className="w-full gap-2 lg:col-span-1">
@@ -254,10 +260,16 @@ export default function WorkspaceHome() {
                     Analizar contrato
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="w-full gap-2 sm:col-span-2 lg:col-span-1">
+                <Button asChild variant="outline" className="w-full gap-2">
                   <Link to="/documents/new-local?intent=academic">
                     <GraduationCap className="h-4 w-4 shrink-0" />
                     Analizar documento académico
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full gap-2 sm:col-span-2 lg:col-span-1">
+                  <Link to="/documents/new-local?intent=content">
+                    <PenLine className="h-4 w-4 shrink-0" />
+                    Creador de contenido
                   </Link>
                 </Button>
               </div>
@@ -297,7 +309,13 @@ export default function WorkspaceHome() {
               </CardHeader>
               <CardContent className="space-y-2 pb-4 pt-0">
                 {walletLockedWithVault ? (
-                  <p className="text-xs text-muted-foreground">Billetera bloqueada.</p>
+                  <p
+                    className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-100 px-2 py-1 text-xs font-medium text-amber-950 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-50"
+                    role="status"
+                  >
+                    <Lock className="h-3 w-3 shrink-0 text-amber-800 dark:text-amber-300" aria-hidden />
+                    Billetera bloqueada
+                  </p>
                 ) : docLoading ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

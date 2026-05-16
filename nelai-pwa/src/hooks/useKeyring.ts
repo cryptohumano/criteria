@@ -1,26 +1,63 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Keyring } from '@polkadot/keyring'
 import { cryptoWaitReady, mnemonicGenerate } from '@polkadot/util-crypto'
 import { u8aToHex, hexToU8a } from '@polkadot/util'
 import type { KeyringPair } from '@polkadot/keyring/types'
-import { encrypt, decrypt } from '@/utils/encryption'
+import { encrypt, decrypt, encryptWithKey, decryptWithKey } from '@/utils/encryption'
 import {
   saveEncryptedAccount,
   getAllEncryptedAccounts,
   deleteEncryptedAccount,
   type EncryptedAccount,
+  type VaultCipherKind,
 } from '@/utils/secureStorage'
 import { closeSharedDB } from '@/utils/indexedDB'
 import { deriveEthereumAddressFromSeed } from '@/utils/ethereum'
 import {
   authenticateWithWebAuthn,
-  type WebAuthnCredential
+  deriveKeyFromWebAuthn,
+  registerWebAuthnCredential,
 } from '@/utils/webauthn'
 import {
   getWebAuthnCredential,
   updateWebAuthnCredentialUsage,
-  getAllWebAuthnCredentials
+  getAllWebAuthnCredentials,
+  saveWebAuthnCredential,
 } from '@/utils/webauthnStorage'
+
+export type VaultCipherSummary = 'unknown' | 'none' | 'password' | 'webauthn' | 'mixed'
+
+function summarizeVaultCiphers(accounts: EncryptedAccount[]): VaultCipherSummary {
+  if (accounts.length === 0) return 'none'
+  const kinds = new Set<VaultCipherKind>(accounts.map((a) => (a.vaultCipher ?? 'password') as VaultCipherKind))
+  if (kinds.size > 1) return 'mixed'
+  return kinds.has('webauthn') ? 'webauthn' : 'password'
+}
+
+/** Deriva la clave AES del vault tras una autenticación WebAuthn (prompt al usuario). */
+async function deriveVaultMasterKeyFromWebAuthn(credentialId: string): Promise<CryptoKey> {
+  if (!(await getWebAuthnCredential(credentialId))) {
+    throw new Error('Credencial WebAuthn no encontrada')
+  }
+
+  const authResult = await authenticateWithWebAuthn(credentialId)
+  await updateWebAuthnCredentialUsage(credentialId)
+
+  const updated = (await getWebAuthnCredential(credentialId))!
+  let masterKeySalt: Uint8Array
+  if (updated.masterKeySalt) {
+    const { base64UrlToArrayBuffer } = await import('@/utils/webauthn')
+    const saltBuffer = base64UrlToArrayBuffer(updated.masterKeySalt)
+    masterKeySalt = new Uint8Array(saltBuffer)
+  } else {
+    const { generateMasterKeySalt, arrayBufferToBase64Url } = await import('@/utils/webauthn')
+    masterKeySalt = generateMasterKeySalt()
+    updated.masterKeySalt = arrayBufferToBase64Url(masterKeySalt.buffer)
+    await saveWebAuthnCredential(updated)
+  }
+
+  return deriveKeyFromWebAuthn(authResult.signature, authResult.authenticatorData, masterKeySalt)
+}
 
 export interface KeyringAccount {
   pair: KeyringPair
@@ -43,6 +80,9 @@ export function useKeyring() {
   const [storedAccountsError, setStoredAccountsError] = useState<string | null>(null)
   const hasStoredAccounts = storedAccountsStatus === 'some'
   const [hasWebAuthnCredentials, setHasWebAuthnCredentials] = useState(false)
+  const [vaultCipherSummary, setVaultCipherSummary] = useState<VaultCipherSummary>('unknown')
+  /** Solo en memoria mientras el vault WebAuthn está desbloqueado; evita re-prompt en importaciones múltiples. */
+  const webAuthnVaultMasterKeyRef = useRef<CryptoKey | null>(null)
 
   // Función para verificar y actualizar el estado de credenciales WebAuthn
   const checkWebAuthnCredentials = useCallback(async () => {
@@ -65,29 +105,56 @@ export function useKeyring() {
       const stored = await getAllEncryptedAccounts()
       const hasAccounts = stored.length > 0
       setStoredAccountsStatus(hasAccounts ? 'some' : 'none')
+      setVaultCipherSummary(hasAccounts ? summarizeVaultCiphers(stored) : 'none')
       setStoredAccountsError(null)
       console.log(`[Keyring] Cuentas almacenadas: ${stored.length} (actualizado)`)
       return hasAccounts
     } catch (error) {
       console.error('[Keyring] ❌ Error al verificar cuentas almacenadas:', error)
       setStoredAccountsStatus('error')
+      setVaultCipherSummary('unknown')
       setStoredAccountsError(error instanceof Error ? error.message : String(error))
       return false
     }
   }, [])
 
-  const assertVaultPassword = useCallback(async (password: string) => {
+  type VaultWriteAccess = { mode: 'password'; password: string } | { mode: 'webauthn'; masterKey: CryptoKey }
+
+  const assertVaultWriteAccess = useCallback(async (password?: string): Promise<VaultWriteAccess> => {
     const encryptedAccounts = await getAllEncryptedAccounts()
-    if (encryptedAccounts.length === 0) return true
-    const testAccount = encryptedAccounts[0]
-    try {
-      await decrypt(testAccount.encryptedData, password)
-      return true
-    } catch {
-      throw new Error(
-        'Contraseña incorrecta para este wallet. Si ya tenías cuentas, debes usar la misma contraseña del vault (la que usas para desbloquear).',
-      )
+    if (encryptedAccounts.length === 0) {
+      throw new Error('No hay cuentas en el vault para validar el acceso de escritura.')
     }
+    const summary = summarizeVaultCiphers(encryptedAccounts)
+    if (summary === 'webauthn') {
+      const creds = await getAllWebAuthnCredentials()
+      if (creds.length === 0) {
+        throw new Error(
+          'El almacén está cifrado con tu dispositivo (WebAuthn), pero no hay credencial registrada.',
+        )
+      }
+      const first = encryptedAccounts[0]
+      if (webAuthnVaultMasterKeyRef.current) {
+        try {
+          await decryptWithKey(first.encryptedData, webAuthnVaultMasterKeyRef.current)
+          return { mode: 'webauthn', masterKey: webAuthnVaultMasterKeyRef.current }
+        } catch {
+          webAuthnVaultMasterKeyRef.current = null
+        }
+      }
+      const masterKey = await deriveVaultMasterKeyFromWebAuthn(creds[0].id)
+      await decryptWithKey(first.encryptedData, masterKey)
+      webAuthnVaultMasterKeyRef.current = masterKey
+      return { mode: 'webauthn', masterKey }
+    }
+    if (summary === 'mixed') {
+      console.warn('[Keyring] Vault con cifrado mixto; se usa validación por contraseña para cuentas compatibles.')
+    }
+    if (!password) {
+      throw new Error('Ingresa la contraseña del wallet para agregar una cuenta.')
+    }
+    await decrypt(encryptedAccounts[0].encryptedData, password)
+    return { mode: 'password', password }
   }, [])
 
   useEffect(() => {
@@ -151,12 +218,22 @@ export function useKeyring() {
         return true
       }
 
-      // Intentar desencriptar la primera cuenta para verificar la contraseña
-      const testAccount = encryptedAccounts[0]
+      const cipherSummary = summarizeVaultCiphers(encryptedAccounts)
+      if (cipherSummary === 'webauthn') {
+        return false
+      }
+
+      const passwordTestTargets = encryptedAccounts.filter(
+        (a) => (a.vaultCipher ?? 'password') !== 'webauthn',
+      )
+      if (passwordTestTargets.length === 0) {
+        return false
+      }
+
       try {
-        await decrypt(testAccount.encryptedData, password)
+        await decrypt(passwordTestTargets[0].encryptedData, password)
       } catch {
-        return false // Contraseña incorrecta
+        return false
       }
 
       // Desencriptar y cargar todas las cuentas
@@ -166,6 +243,9 @@ export function useKeyring() {
       const derivedEvm: Record<string, string> = {}
 
       for (const encAccount of encryptedAccounts) {
+        if ((encAccount.vaultCipher ?? 'password') === 'webauthn') {
+          continue
+        }
         try {
           const decryptedData = await decrypt(encAccount.encryptedData, password)
           const parsed = JSON.parse(decryptedData)
@@ -267,6 +347,7 @@ export function useKeyring() {
       setAccounts(loadedAccounts)
       setDerivedEthereumAddresses(derivedEvm)
       setIsUnlocked(true)
+      webAuthnVaultMasterKeyRef.current = null
       return true
     } catch (error) {
       console.error('Error al desbloquear keyring:', error)
@@ -283,110 +364,178 @@ export function useKeyring() {
 
     try {
       const encryptedAccounts = await getAllEncryptedAccounts()
-      
+
       if (encryptedAccounts.length === 0) {
         setIsUnlocked(true)
         return true
       }
 
-      // Obtener la credencial WebAuthn
-      const credential = await getWebAuthnCredential(credentialId)
-      if (!credential) {
-        console.error('[Keyring] Credencial WebAuthn no encontrada')
+      const webauthnTargets = encryptedAccounts.filter(
+        (a) => (a.vaultCipher ?? 'password') === 'webauthn',
+      )
+      if (webauthnTargets.length === 0) {
+        console.warn('[Keyring] No hay cuentas cifradas con WebAuthn; usa la contraseña del vault.')
         return false
       }
 
-      // Autenticar con WebAuthn (esto verifica la identidad del usuario)
-      const authResult = await authenticateWithWebAuthn(credentialId)
-      
-      // Actualizar el uso de la credencial
-      await updateWebAuthnCredentialUsage(credentialId)
-      
-      console.log('[Keyring] ✅ Autenticación WebAuthn exitosa')
-      
-      // Obtener o generar el salt para la clave maestra
-      let masterKeySalt: Uint8Array
-      if (credential.masterKeySalt) {
-        // Convertir salt de base64url a Uint8Array
-        const { base64UrlToArrayBuffer } = await import('@/utils/webauthn')
-        const saltBuffer = base64UrlToArrayBuffer(credential.masterKeySalt)
-        masterKeySalt = new Uint8Array(saltBuffer)
-      } else {
-        // Si no hay salt, generar uno nuevo y guardarlo
-        const { generateMasterKeySalt, arrayBufferToBase64Url } = await import('@/utils/webauthn')
-        const { saveWebAuthnCredential } = await import('@/utils/webauthnStorage')
-        masterKeySalt = generateMasterKeySalt()
-        credential.masterKeySalt = arrayBufferToBase64Url(masterKeySalt.buffer)
-        await saveWebAuthnCredential(credential)
-        console.log('[Keyring] ✅ Salt de clave maestra generado y guardado')
+      if (summarizeVaultCiphers(encryptedAccounts) === 'mixed') {
+        console.warn('[Keyring] Vault mixto: solo se cargarán cuentas cifradas con WebAuthn.')
       }
 
-      // Derivar la clave maestra desde WebAuthn
-      const { deriveKeyFromWebAuthn } = await import('@/utils/webauthn')
-      const masterKey = await deriveKeyFromWebAuthn(
-        authResult.signature,
-        authResult.authenticatorData,
-        masterKeySalt
-      )
-      
-      console.log('[Keyring] ✅ Clave maestra derivada desde WebAuthn')
+      const masterKey = await deriveVaultMasterKeyFromWebAuthn(credentialId)
 
-      // Desencriptar y cargar todas las cuentas usando la clave maestra
-      const { decryptWithKey } = await import('@/utils/encryption')
       const loadedAccounts: KeyringAccount[] = []
       const derivedEvm: Record<string, string> = {}
 
       for (const encAccount of encryptedAccounts) {
-        try {
-          // Intentar desencriptar con la clave maestra de WebAuthn
-          const decryptedData = await decryptWithKey(encAccount.encryptedData, masterKey)
-          const { uri, mnemonic, type } = JSON.parse(decryptedData)
-          
-          // Usar uri si está disponible, sino mnemonic
-          const seed = uri || mnemonic
-          if (!seed) {
-            console.error(`[Keyring] ❌ Cuenta ${encAccount.address} no tiene uri ni mnemonic`)
-            continue
-          }
+        if ((encAccount.vaultCipher ?? 'password') !== 'webauthn') continue
 
-          try {
-            derivedEvm[encAccount.address] = deriveEthereumAddressFromSeed(seed)
-          } catch (e) {
-            console.debug(`[Keyring] No se pudo derivar EVM para ${encAccount.address}:`, e)
+        try {
+          const decryptedData = await decryptWithKey(encAccount.encryptedData, masterKey)
+          const parsed = JSON.parse(decryptedData)
+
+          if (parsed.isPolkadotJson && parsed.jsonData && parsed.jsonPassword) {
+            const pair = keyring.addFromJson(parsed.jsonData, parsed.jsonPassword)
+            if (pair.address !== encAccount.address) {
+              console.warn(
+                `[Keyring] ⚠️ Dirección no coincide: esperada ${encAccount.address}, obtenida ${pair.address}`,
+              )
+            }
+            if (pair.isLocked) {
+              pair.unlock(parsed.jsonPassword)
+              if (pair.isLocked) {
+                console.error(`[Keyring] ❌ No se pudo desbloquear el pair: ${pair.address}`)
+                continue
+              }
+            }
+            loadedAccounts.push({
+              pair,
+              address: pair.address,
+              publicKey: pair.publicKey,
+              meta: pair.meta,
+            })
+            console.log(`[Keyring] ✅ Cuenta de Polkadot.js cargada (WebAuthn): ${pair.address}`)
+          } else {
+            const { uri, mnemonic, type } = parsed
+            const seed = uri || mnemonic
+            if (!seed) {
+              console.error(`[Keyring] ❌ Cuenta ${encAccount.address} no tiene uri ni mnemonic`)
+              continue
+            }
+            try {
+              derivedEvm[encAccount.address] = deriveEthereumAddressFromSeed(seed)
+            } catch (e) {
+              console.debug(`[Keyring] No se pudo derivar EVM para ${encAccount.address}:`, e)
+            }
+            const pair = keyring.addFromUri(seed, encAccount.meta, type || 'sr25519')
+            if (pair.address !== encAccount.address) {
+              console.warn(
+                `[Keyring] ⚠️ Dirección no coincide: esperada ${encAccount.address}, obtenida ${pair.address}`,
+              )
+            }
+            loadedAccounts.push({
+              pair,
+              address: pair.address,
+              publicKey: pair.publicKey,
+              meta: pair.meta,
+            })
+            console.log(`[Keyring] ✅ Cuenta cargada (WebAuthn): ${pair.address}`)
           }
-          
-          const pair = keyring.addFromUri(seed, encAccount.meta, type || 'sr25519')
-          loadedAccounts.push({
-            pair,
-            address: pair.address,
-            publicKey: pair.publicKey,
-            meta: pair.meta,
-          })
-          console.log(`[Keyring] ✅ Cuenta cargada: ${pair.address}`)
         } catch (error) {
-          // Si falla, la cuenta puede estar encriptada con contraseña, no con WebAuthn
           console.warn(`[Keyring] ⚠️ No se pudo desencriptar cuenta ${encAccount.address} con WebAuthn:`, error)
-          // Continuar con otras cuentas
         }
       }
 
       if (loadedAccounts.length === 0) {
-        console.warn('[Keyring] ⚠️ No se pudieron cargar cuentas con WebAuthn. Puede que estén encriptadas con contraseña.')
-        // Aún así marcamos como desbloqueado para permitir crear nuevas cuentas
-        setIsUnlocked(true)
-        return true
+        console.warn('[Keyring] ⚠️ WebAuthn no pudo descifrar ninguna cuenta.')
+        return false
       }
 
-      console.log(`[Keyring] ✅ ${loadedAccounts.length} cuenta(s) cargada(s) exitosamente con WebAuthn`)
+      console.log(`[Keyring] ✅ ${loadedAccounts.length} cuenta(s) cargada(s) con WebAuthn`)
       setAccounts(loadedAccounts)
       setDerivedEthereumAddresses(derivedEvm)
       setIsUnlocked(true)
+      webAuthnVaultMasterKeyRef.current = masterKey
       return true
     } catch (error) {
       console.error('[Keyring] ❌ Error al desbloquear con WebAuthn:', error)
       return false
     }
   }, [keyring])
+
+  const createIdentityWithWebAuthn = useCallback(
+    async (opts?: { userName?: string; displayName?: string; accountLabel?: string }) => {
+      if (!keyring) {
+        console.error('[Keyring] ❌ createIdentityWithWebAuthn: keyring no inicializado')
+        return null
+      }
+
+      const existing = await getAllEncryptedAccounts()
+      if (existing.length > 0) {
+        console.warn('[Keyring] createIdentityWithWebAuthn: ya existe un vault en este dispositivo')
+        return null
+      }
+
+      const userIdBytes = crypto.getRandomValues(new Uint8Array(16))
+      const userId = Array.from(userIdBytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+      const userName = opts?.userName?.trim() || 'usuario'
+      const displayName = (opts?.displayName?.trim() || userName).trim() || 'CriterIA'
+
+      const credential = await registerWebAuthnCredential(
+        userId,
+        userName,
+        displayName,
+        'Este dispositivo',
+      )
+      await saveWebAuthnCredential(credential)
+      await checkWebAuthnCredentials()
+
+      const masterKey = await deriveVaultMasterKeyFromWebAuthn(credential.id)
+      const mnemonic = mnemonicGenerate()
+      const name = opts?.accountLabel?.trim() || 'Mi identidad'
+      const type = 'sr25519' as const
+
+      const pair = keyring.addFromUri(mnemonic, { name }, type)
+      const account: KeyringAccount = {
+        pair,
+        address: pair.address,
+        publicKey: pair.publicKey,
+        meta: pair.meta,
+      }
+
+      setAccounts((prev) => [...prev, account])
+      setIsUnlocked(true)
+
+      try {
+        const evmAddr = deriveEthereumAddressFromSeed(mnemonic)
+        setDerivedEthereumAddresses((prev) => ({ ...prev, [account.address]: evmAddr }))
+      } catch (e) {
+        console.debug(`[Keyring] No se pudo derivar EVM para ${account.address}:`, e)
+      }
+
+      const encryptedData = await encryptWithKey(
+        JSON.stringify({ mnemonic, uri: null, type }),
+        masterKey,
+      )
+      await saveEncryptedAccount({
+        address: account.address,
+        encryptedData,
+        vaultCipher: 'webauthn',
+        publicKey: u8aToHex(account.publicKey),
+        type,
+        meta: account.meta,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+      await checkStoredAccounts()
+      console.log(`[Keyring] ✅ Identidad creada con WebAuthn: ${account.address}`)
+      webAuthnVaultMasterKeyRef.current = masterKey
+      return account
+    },
+    [keyring, checkStoredAccounts, checkWebAuthnCredentials],
+  )
 
   /**
    * Bloquea el keyring, eliminando las claves de memoria
@@ -404,6 +553,7 @@ export function useKeyring() {
     setAccounts([])
     setDerivedEthereumAddresses({})
     setIsUnlocked(false)
+    webAuthnVaultMasterKeyRef.current = null
     // Libera la conexión a IndexedDB para que "eliminar todo" / deleteDatabase no quede en `blocked`
     closeSharedDB()
   }, [keyring, accounts])
@@ -427,14 +577,18 @@ export function useKeyring() {
       return null
     }
 
-    // Si ya existe un vault (hay cuentas almacenadas), forzar que la nueva cuenta
-    // se encripte con la MISMA contraseña del vault para evitar "multi-password"
-    // (donde solo funciona la última contraseña creada).
+    // Si ya existe un vault (hay cuentas almacenadas), validar acceso de escritura
+    // (contraseña o WebAuthn según cómo esté cifrado el almacén).
+    let writeAccess: VaultWriteAccess
     if (hasStored) {
-      if (!password) {
-        throw new Error('Ingresa la contraseña del wallet para agregar una cuenta.')
+      writeAccess = await assertVaultWriteAccess(password)
+    } else {
+      if (!password || password.length < 8) {
+        throw new Error(
+          'Elige una contraseña de al menos 8 caracteres para cifrar la llave en este dispositivo.',
+        )
       }
-      await assertVaultPassword(password)
+      writeAccess = { mode: 'password', password }
     }
 
     // Si no hay cuentas almacenadas, marcar como desbloqueado para permitir la creación
@@ -470,35 +624,35 @@ export function useKeyring() {
         console.debug(`[Keyring] No se pudo derivar EVM para ${account.address}:`, e)
       }
 
-      // 3. Guardar encriptado en IndexedDB (requiere contraseña)
-      if (password) {
+      // 3. Guardar encriptado en IndexedDB
+      try {
+        const payload = JSON.stringify({ mnemonic, uri: null, type })
+        const encryptedData =
+          writeAccess.mode === 'password'
+            ? await encrypt(payload, writeAccess.password)
+            : await encryptWithKey(payload, writeAccess.masterKey)
+        const vaultCipher: VaultCipherKind = writeAccess.mode === 'password' ? 'password' : 'webauthn'
+        await saveEncryptedAccount({
+          address: account.address,
+          encryptedData,
+          vaultCipher,
+          publicKey: u8aToHex(account.publicKey),
+          type,
+          meta: account.meta,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        console.log(`[Keyring] ✅ Cuenta guardada en IndexedDB: ${account.address}`)
+
+        await checkStoredAccounts()
+      } catch (error) {
+        console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
+        // Remover del keyring si falla el guardado
         try {
-          const encryptedData = await encrypt(JSON.stringify({ mnemonic, uri: null, type }), password)
-          await saveEncryptedAccount({
-            address: account.address,
-            encryptedData,
-            publicKey: u8aToHex(account.publicKey),
-            type,
-            meta: account.meta,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          })
-          console.log(`[Keyring] ✅ Cuenta guardada en IndexedDB: ${account.address}`)
-          
-          // Actualizar estado del vault después de guardar
-          setStoredAccountsStatus('some')
-          setStoredAccountsError(null)
-        } catch (error) {
-          console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
-          // Remover del keyring si falla el guardado
-          try {
-            keyring.removePair(account.address)
-            setAccounts((prev) => prev.filter(acc => acc.address !== account.address))
-          } catch {}
-          throw error
-        }
-      } else {
-        console.warn(`[Keyring] ⚠️ Cuenta ${account.address} agregada al keyring pero NO guardada en IndexedDB (sin contraseña). Se perderá al bloquear el keyring.`)
+          keyring.removePair(account.address)
+          setAccounts((prev) => prev.filter((acc) => acc.address !== account.address))
+        } catch {}
+        throw error
       }
 
       return account
@@ -506,7 +660,7 @@ export function useKeyring() {
       console.error('[Keyring] ❌ Error al agregar cuenta desde mnemonic:', error)
       throw error
     }
-  }, [keyring, isUnlocked, hasStoredAccounts])
+  }, [keyring, isUnlocked, hasStoredAccounts, assertVaultWriteAccess, checkStoredAccounts])
 
   /**
    * Importa una cuenta desde un archivo JSON de Polkadot.js
@@ -536,9 +690,16 @@ export function useKeyring() {
       return null
     }
 
+    let writeAccess: VaultWriteAccess
     if (hasStored) {
-      if (!password) throw new Error('Ingresa la contraseña del wallet para agregar una cuenta.')
-      await assertVaultPassword(password)
+      writeAccess = await assertVaultWriteAccess(password)
+    } else {
+      if (!password || password.length < 8) {
+        throw new Error(
+          'Elige una contraseña de al menos 8 caracteres para cifrar la llave en este dispositivo.',
+        )
+      }
+      writeAccess = { mode: 'password', password }
     }
 
     // Si no hay cuentas almacenadas, marcar como desbloqueado
@@ -584,59 +745,52 @@ export function useKeyring() {
       })
 
       // Guardar encriptado en IndexedDB
-      // Para JSON de Polkadot.js, guardamos el JSON original y la contraseña del JSON (ambos encriptados)
-      // La contraseña del JSON se necesita para desbloquear la cuenta al desbloquear el wallet
-      if (password) {
-        try {
-          // Extraer el tipo del encoding
-          const cryptoType = (jsonData as any).encoding?.content?.[1] || 'sr25519'
-          
-          // Guardar el JSON original y la contraseña del JSON, ambos encriptados con nuestra contraseña
-          // Esto permite desbloquear la cuenta sin pedir la contraseña del JSON cada vez
-          const dataToEncrypt = JSON.stringify({ 
-            jsonData, 
-            isPolkadotJson: true,
-            jsonPassword: jsonPassword // Guardar la contraseña del JSON encriptada
-          })
-          console.log(`[Keyring] 🔐 Encriptando datos para guardar en IndexedDB...`)
-          const encryptedData = await encrypt(dataToEncrypt, password)
-          
-          const accountToSave = {
-            address: account.address,
-            encryptedData,
-            publicKey: u8aToHex(account.publicKey),
-            type: cryptoType,
-            meta: account.meta,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }
-          
-          console.log(`[Keyring] 💾 Guardando cuenta en IndexedDB: ${account.address}`)
-          await saveEncryptedAccount(accountToSave)
-          
-          // Verificar que la cuenta se guardó correctamente
-          const savedAccounts = await getAllEncryptedAccounts()
-          const wasSaved = savedAccounts.some(acc => acc.address === account.address)
-          
-          if (wasSaved) {
-            console.log(`[Keyring] ✅ Cuenta guardada y verificada en IndexedDB: ${account.address}`)
-            setStoredAccountsStatus('some')
-            setStoredAccountsError(null)
-          } else {
-            console.error(`[Keyring] ❌ Cuenta NO encontrada en IndexedDB después de guardar: ${account.address}`)
-            throw new Error('La cuenta no se guardó correctamente en IndexedDB')
-          }
-        } catch (error) {
-          console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
-          // Remover del keyring si falla el guardado
-          try {
-            keyring.removePair(account.address)
-            setAccounts((prev) => prev.filter(acc => acc.address !== account.address))
-          } catch {}
-          throw error
+      try {
+        const cryptoType = (jsonData as any).encoding?.content?.[1] || 'sr25519'
+
+        const dataToEncrypt = JSON.stringify({
+          jsonData,
+          isPolkadotJson: true,
+          jsonPassword: jsonPassword,
+        })
+        console.log(`[Keyring] 🔐 Encriptando datos para guardar en IndexedDB...`)
+        const encryptedData =
+          writeAccess.mode === 'password'
+            ? await encrypt(dataToEncrypt, writeAccess.password)
+            : await encryptWithKey(dataToEncrypt, writeAccess.masterKey)
+        const vaultCipher: VaultCipherKind = writeAccess.mode === 'password' ? 'password' : 'webauthn'
+
+        const accountToSave = {
+          address: account.address,
+          encryptedData,
+          vaultCipher,
+          publicKey: u8aToHex(account.publicKey),
+          type: cryptoType,
+          meta: account.meta,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         }
-      } else {
-        console.warn(`[Keyring] ⚠️ Cuenta ${account.address} agregada al keyring pero NO guardada en IndexedDB (sin contraseña). Se perderá al bloquear el keyring.`)
+
+        console.log(`[Keyring] 💾 Guardando cuenta en IndexedDB: ${account.address}`)
+        await saveEncryptedAccount(accountToSave)
+
+        const savedAccounts = await getAllEncryptedAccounts()
+        const wasSaved = savedAccounts.some((acc) => acc.address === account.address)
+
+        if (wasSaved) {
+          console.log(`[Keyring] ✅ Cuenta guardada y verificada en IndexedDB: ${account.address}`)
+          await checkStoredAccounts()
+        } else {
+          console.error(`[Keyring] ❌ Cuenta NO encontrada en IndexedDB después de guardar: ${account.address}`)
+          throw new Error('La cuenta no se guardó correctamente en IndexedDB')
+        }
+      } catch (error) {
+        console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
+        try {
+          keyring.removePair(account.address)
+          setAccounts((prev) => prev.filter((acc) => acc.address !== account.address))
+        } catch {}
+        throw error
       }
 
       return account
@@ -644,7 +798,7 @@ export function useKeyring() {
       console.error('[Keyring] ❌ Error al agregar cuenta desde JSON:', error)
       throw error
     }
-  }, [assertVaultPassword, keyring, isUnlocked, hasStoredAccounts])
+  }, [assertVaultWriteAccess, checkStoredAccounts, keyring, isUnlocked, hasStoredAccounts])
 
   const addFromUri = useCallback(async (uri: string, name?: string, type: 'sr25519' | 'ed25519' | 'ecdsa' = 'sr25519', password?: string): Promise<KeyringAccount | null> => {
     if (!keyring || !isUnlocked) {
@@ -679,37 +833,47 @@ export function useKeyring() {
         console.debug(`[Keyring] No se pudo derivar EVM para ${account.address}:`, e)
       }
 
-      // 3. Guardar encriptado en IndexedDB (requiere contraseña)
-      if (password) {
-        // addFromUri solo se permite estando desbloqueado; si ya hay vault, validamos password.
-        const encryptedAccounts = await getAllEncryptedAccounts()
-        if (encryptedAccounts.length > 0) await assertVaultPassword(password)
-        try {
-          const encryptedData = await encrypt(JSON.stringify({ uri, mnemonic: null, type }), password)
-          await saveEncryptedAccount({
-            address: account.address,
-            encryptedData,
-            publicKey: u8aToHex(account.publicKey),
-            type,
-            meta: account.meta,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          })
-          console.log(`[Keyring] ✅ Cuenta guardada en IndexedDB: ${account.address}`)
-          
-          setStoredAccountsStatus('some')
-          setStoredAccountsError(null)
-        } catch (error) {
-          console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
-          // Remover del keyring si falla el guardado
-          try {
-            keyring.removePair(account.address)
-            setAccounts((prev) => prev.filter(acc => acc.address !== account.address))
-          } catch {}
-          throw error
-        }
+      // 3. Guardar encriptado en IndexedDB
+      const encryptedAccounts = await getAllEncryptedAccounts()
+      let writeAccess: VaultWriteAccess
+      if (encryptedAccounts.length > 0) {
+        writeAccess = await assertVaultWriteAccess(password)
       } else {
-        console.warn(`[Keyring] ⚠️ Cuenta ${account.address} agregada al keyring pero NO guardada en IndexedDB (sin contraseña). Se perderá al bloquear el keyring.`)
+        if (!password || password.length < 8) {
+          throw new Error(
+            'Elige una contraseña de al menos 8 caracteres para cifrar la llave en este dispositivo.',
+          )
+        }
+        writeAccess = { mode: 'password', password }
+      }
+
+      try {
+        const payload = JSON.stringify({ uri, mnemonic: null, type })
+        const encryptedData =
+          writeAccess.mode === 'password'
+            ? await encrypt(payload, writeAccess.password)
+            : await encryptWithKey(payload, writeAccess.masterKey)
+        const vaultCipher: VaultCipherKind = writeAccess.mode === 'password' ? 'password' : 'webauthn'
+        await saveEncryptedAccount({
+          address: account.address,
+          encryptedData,
+          vaultCipher,
+          publicKey: u8aToHex(account.publicKey),
+          type,
+          meta: account.meta,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        console.log(`[Keyring] ✅ Cuenta guardada en IndexedDB: ${account.address}`)
+
+        await checkStoredAccounts()
+      } catch (error) {
+        console.error('[Keyring] ❌ Error al guardar cuenta encriptada:', error)
+        try {
+          keyring.removePair(account.address)
+          setAccounts((prev) => prev.filter((acc) => acc.address !== account.address))
+        } catch {}
+        throw error
       }
 
       return account
@@ -717,7 +881,7 @@ export function useKeyring() {
       console.error('[Keyring] ❌ Error al agregar cuenta desde URI:', error)
       throw error
     }
-  }, [assertVaultPassword, keyring, isUnlocked])
+  }, [assertVaultWriteAccess, checkStoredAccounts, keyring, isUnlocked])
 
   const removeAccount = useCallback(async (address: string) => {
     if (!keyring) return false
@@ -733,18 +897,15 @@ export function useKeyring() {
       
       // Eliminar de IndexedDB
       await deleteEncryptedAccount(address)
-      
-      // Actualizar estado del vault
-      const remaining = await getAllEncryptedAccounts()
-      setStoredAccountsStatus(remaining.length > 0 ? 'some' : 'none')
-      setStoredAccountsError(null)
-      
+
+      await checkStoredAccounts()
+
       return true
     } catch (error) {
       console.error('Error al eliminar cuenta:', error)
       return false
     }
-  }, [keyring])
+  }, [keyring, checkStoredAccounts])
 
   const getAccount = useCallback((address: string) => {
     return accounts.find((acc) => acc.address === address)
@@ -758,11 +919,67 @@ export function useKeyring() {
     if (!keyring) return
     keyring.setSS58Format(format)
     // Actualizar direcciones de todas las cuentas
-    setAccounts((prev) => prev.map((acc) => ({
-      ...acc,
-      address: acc.pair.address,
-    })))
+    setAccounts((prev) =>
+      prev.map((acc) => ({
+        ...acc,
+        address: acc.pair.address,
+      })),
+    )
   }, [keyring])
+
+  const exportMnemonicForAccount = useCallback(
+    async (
+      address: string,
+      vaultPassword?: string,
+    ): Promise<{ kind: 'mnemonic' | 'uri' | 'none'; secret: string | null; reason?: string }> => {
+      const enc = (await getAllEncryptedAccounts()).find((e) => e.address === address)
+      if (!enc) {
+        return { kind: 'none', secret: null, reason: 'Cuenta no encontrada en el almacén local.' }
+      }
+
+      let plain: string | undefined
+      if ((enc.vaultCipher ?? 'password') === 'webauthn') {
+        if (webAuthnVaultMasterKeyRef.current) {
+          try {
+            plain = await decryptWithKey(enc.encryptedData, webAuthnVaultMasterKeyRef.current)
+          } catch {
+            webAuthnVaultMasterKeyRef.current = null
+          }
+        }
+        if (plain === undefined) {
+          const creds = await getAllWebAuthnCredentials()
+          if (!creds.length) {
+            throw new Error('No hay credencial WebAuthn registrada para descifrar este almacén.')
+          }
+          const masterKey = await deriveVaultMasterKeyFromWebAuthn(creds[0].id)
+          plain = await decryptWithKey(enc.encryptedData, masterKey)
+          webAuthnVaultMasterKeyRef.current = masterKey
+        }
+      } else {
+        if (!vaultPassword?.trim()) {
+          throw new Error('Ingresa la contraseña del almacén para ver la frase.')
+        }
+        plain = await decrypt(enc.encryptedData, vaultPassword.trim())
+      }
+
+      const parsed = JSON.parse(plain as string) as Record<string, unknown>
+      if (parsed.isPolkadotJson) {
+        return {
+          kind: 'none',
+          secret: null,
+          reason: 'Cuenta importada desde JSON de Polkadot.js: no hay frase mnemónica en texto plano.',
+        }
+      }
+      if (typeof parsed.mnemonic === 'string' && parsed.mnemonic.trim()) {
+        return { kind: 'mnemonic', secret: parsed.mnemonic.trim() }
+      }
+      if (typeof parsed.uri === 'string' && parsed.uri.trim()) {
+        return { kind: 'uri', secret: parsed.uri.trim() }
+      }
+      return { kind: 'none', secret: null, reason: 'No hay mnemónico ni URI guardados en este registro.' }
+    },
+    [],
+  )
 
   return {
     keyring,
@@ -773,6 +990,7 @@ export function useKeyring() {
     storedAccountsStatus,
     storedAccountsError,
     hasWebAuthnCredentials,
+    vaultCipherSummary,
     generateMnemonic,
     unlock,
     unlockWithWebAuthn,
@@ -781,6 +999,8 @@ export function useKeyring() {
     addFromUri,
     addFromJson,
     removeAccount,
+    createIdentityWithWebAuthn,
+    exportMnemonicForAccount,
     getAccount,
     getDerivedEthereumAddress,
     setSS58Format,

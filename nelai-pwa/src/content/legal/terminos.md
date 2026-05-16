@@ -14,7 +14,7 @@ Al usar la aplicación aceptas estos términos. Si no estás de acuerdo, no uses
 
 ## 3. Cuenta y seguridad
 
-- Eres responsable de la **confidencialidad** de tus credenciales (correo, contraseña de organización, contraseña de wallet local, etc.).
+- Eres responsable de la **confidencialidad** de tus credenciales (correo, contraseña de organización, contraseña del almacén local o credenciales WebAuthn del dispositivo, etc.).
 - Parte de los datos puede residir **en tu dispositivo** (p. ej. documentos y claves cifradas). La pérdida del dispositivo o de copias de seguridad puede implicar **pérdida de acceso** a datos no respaldados en servidores de terceros.
 
 ## 4. Uso permitido

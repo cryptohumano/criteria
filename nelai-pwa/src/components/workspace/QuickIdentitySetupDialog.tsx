@@ -15,8 +15,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useKeyringContext } from '@/contexts/KeyringContext'
 import { Unlock } from '@/components/auth/Unlock'
-import { Copy, Check, Loader2, Shield } from 'lucide-react'
+import { Fingerprint, Loader2, Shield } from 'lucide-react'
 import { toast } from 'sonner'
+import { isWebAuthnAvailable } from '@/utils/webauthn'
+import { useWorkspaceSession } from '@/contexts/useWorkspaceSession'
 
 type QuickIdentityProps = {
   /** Mientras sea true, el modal no se cierra con Escape ni clic fuera. */
@@ -25,7 +27,7 @@ type QuickIdentityProps = {
 
 /**
  * Primera identidad criptográfica en el dispositivo o desbloqueo del vault antes de editar.
- * Pensado para no desviar al usuario a Cuentas antes de analizar o crear un documento.
+ * Preferimos WebAuthn (sin frase visible); si no hay soporte, se usa contraseña local sin mostrar mnemónico.
  */
 export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
   const {
@@ -35,68 +37,67 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
     isUnlocked,
     generateMnemonic,
     addFromMnemonic,
+    createIdentityWithWebAuthn,
   } = useKeyringContext()
 
+  const { session } = useWorkspaceSession()
+
   const [consentInfo, setConsentInfo] = useState(false)
-  const [consentPhrase, setConsentPhrase] = useState(false)
-  const [mnemonic, setMnemonic] = useState('')
-  const [phraseRevealed, setPhraseRevealed] = useState(false)
   const [displayName, setDisplayName] = useState('Mi identidad')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
+
+  const webAuthnUsable = typeof window !== 'undefined' && isWebAuthnAvailable()
 
   useEffect(() => {
     if (!open) {
       setConsentInfo(false)
-      setConsentPhrase(false)
-      setMnemonic('')
-      setPhraseRevealed(false)
       setDisplayName('Mi identidad')
       setPassword('')
       setConfirmPassword('')
       setError('')
       setLoading(false)
-      setCopied(false)
     }
   }, [open])
 
   const needsUnlock = hasStoredAccounts && !isUnlocked && accounts.length === 0
   const needsCreate = !hasStoredAccounts && accounts.length === 0
 
-  const handleRevealPhrase = () => {
+  const handleWebAuthnCreate = async () => {
     setError('')
     if (!consentInfo) {
-      setError('Marca la casilla de información y enlaces leídos para continuar.')
+      setError('Marca la casilla de información para continuar.')
       return
     }
-    const phrase = generateMnemonic()
-    setMnemonic(phrase)
-    setPhraseRevealed(true)
-  }
-
-  const handleCopy = async () => {
-    if (!mnemonic) return
+    setLoading(true)
     try {
-      await navigator.clipboard.writeText(mnemonic)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-      toast.success('Frase copiada al portapapeles')
-    } catch {
-      toast.error('No se pudo copiar')
+      const u = session?.user
+      const acc = await createIdentityWithWebAuthn({
+        userName: u?.email || u?.displayName,
+        displayName: u?.displayName || u?.email,
+        accountLabel: displayName.trim() || undefined,
+      })
+      if (acc) {
+        toast.success('Listo', {
+          description:
+            'Tu llave local quedó protegida con este dispositivo. Puedes ver la frase de recuperación en Configuración → Seguridad.',
+        })
+      } else {
+        setError('No se pudo crear la identidad. Comprueba que WebAuthn esté permitido o intenta de nuevo.')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al crear la identidad')
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleCreate = async () => {
+  const handlePasswordCreate = async () => {
     setError('')
-    if (!phraseRevealed || !mnemonic) {
-      setError('Genera y revisa la frase de recuperación primero.')
-      return
-    }
-    if (!consentPhrase) {
-      setError('Confirma que guardaste la frase de recuperación.')
+    if (!consentInfo) {
+      setError('Marca la casilla de información para continuar.')
       return
     }
     if (!password || password.length < 8) {
@@ -109,11 +110,13 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
     }
     setLoading(true)
     try {
+      const mnemonic = generateMnemonic()
       const name = displayName.trim() || 'Mi identidad'
       const acc = await addFromMnemonic(mnemonic, name, 'sr25519', password)
       if (acc) {
         toast.success('Identidad lista', {
-          description: 'Ya puedes trabajar con el documento. La frase solo está en tu dispositivo.',
+          description:
+            'La frase de recuperación no se mostró aquí; consúltala en Configuración → Seguridad cuando la necesites.',
         })
       } else {
         setError('No se pudo crear la cuenta. Intenta de nuevo.')
@@ -140,12 +143,11 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
           <DialogHeader className="space-y-1 text-left">
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
               <Shield className="h-5 w-5 shrink-0 text-primary" />
-              Identidad en este dispositivo
+              Llave en este dispositivo
             </DialogTitle>
             <DialogDescription className="text-xs leading-relaxed sm:text-sm">
-              Una llave local (Substrate) vincula la autoría al guardar PDFs, separa documentos por titular y prepara
-              firmas. criterIA no almacena tu frase de recuperación ni tu contraseña en sus servidores: solo en este
-              navegador, cifrado.
+              Una llave local (Substrate) separa tus documentos por titular y permite firmas verificables. criterIA no
+              guarda tu frase ni la contraseña del almacén en sus servidores: solo en este navegador, cifrado.
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -161,11 +163,11 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
           ) : needsCreate ? (
             <>
               <Alert>
-                <AlertTitle className="text-sm">Por qué ahora</AlertTitle>
+                <AlertTitle className="text-sm">Un solo paso</AlertTitle>
                 <AlertDescription className="text-xs leading-relaxed">
-                  Así el asistente y el guardado respetan tu titularidad criptográfica y las políticas de datos
-                  personales del editor. Tardas unos minutos; puedes cancelar cerrando la pestaña si no deseas
-                  continuar.
+                  {webAuthnUsable
+                    ? 'Usa la huella, el rostro o el PIN del sistema para proteger la llave. No hace falta inventar otra contraseña para el almacén.'
+                    : 'Este navegador no ofrece WebAuthn fiable; define una contraseña local solo para cifrar la llave en este dispositivo.'}
                 </AlertDescription>
               </Alert>
 
@@ -177,9 +179,8 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
                   className="mt-0.5"
                 />
                 <Label htmlFor="qi-consent-info" className="cursor-pointer text-xs font-normal leading-relaxed">
-                  Entiendo que la frase de recuperación es la única forma de recuperar esta identidad en otro equipo,
-                  que criterIA no la guarda en la nube y que puedo gestionar exportación o borrado desde Configuración. He
-                  revisado la{' '}
+                  Entiendo que la recuperación en otro equipo requiere la frase de respaldo o un export desde
+                  Configuración. He revisado la{' '}
                   <Link to="/legal/privacidad" className="font-medium text-primary underline-offset-2 hover:underline">
                     información de privacidad
                   </Link>{' '}
@@ -191,67 +192,44 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
                 </Label>
               </div>
 
-              {!phraseRevealed ? (
-                <Button type="button" className="w-full" onClick={handleRevealPhrase} disabled={!consentInfo}>
-                  Generar frase de recuperación
-                </Button>
-              ) : (
+              <div className="space-y-2">
+                <Label htmlFor="qi-name">Nombre para esta llave (opcional)</Label>
+                <Input
+                  id="qi-name"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+
+              {webAuthnUsable ? (
                 <div className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label className="text-xs">Frase de recuperación (guárdala fuera de esta pantalla)</Label>
-                      <Button type="button" variant="outline" size="sm" className="h-8 gap-1" onClick={handleCopy}>
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        Copiar
-                      </Button>
-                    </div>
-                    <div className="rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-relaxed break-words">
-                      {mnemonic}
-                    </div>
+                  <div className="flex min-w-0 flex-col items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 bg-muted/20 px-4 py-4 sm:flex-row sm:items-start sm:text-left">
+                    <Fingerprint className="h-10 w-10 shrink-0 text-primary sm:h-11 sm:w-11" aria-hidden />
+                    <p className="min-w-0 flex-1 text-center text-xs text-muted-foreground sm:text-left sm:text-sm">
+                      Se registrará una credencial en este dispositivo y se creará la llave de forma automática. La
+                      frase de recuperación podrás verla en Configuración → Seguridad, con verificación biométrica.
+                    </p>
                   </div>
-
-                  <div className="flex items-start gap-3 rounded-lg border bg-background p-3">
-                    <Checkbox
-                      id="qi-consent-phrase"
-                      checked={consentPhrase}
-                      onCheckedChange={(v) => setConsentPhrase(v === true)}
-                      className="mt-0.5"
-                    />
-                    <Label htmlFor="qi-consent-phrase" className="cursor-pointer text-xs font-normal leading-relaxed">
-                      Declaro haber copiado o archivado la frase en un lugar seguro. Entiendo que si la pierdo, no
-                      podré recuperar la llave.
-                    </Label>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="qi-name">Nombre para esta llave (opcional)</Label>
-                    <Input
-                      id="qi-name"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="qi-pw">Contraseña del almacén en este dispositivo</Label>
-                    <Input
-                      id="qi-pw"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="qi-pw2">Confirmar contraseña</Label>
-                    <Input
-                      id="qi-pw2"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="qi-pw">Contraseña del almacén en este dispositivo</Label>
+                  <Input
+                    id="qi-pw"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <Label htmlFor="qi-pw2">Confirmar contraseña</Label>
+                  <Input
+                    id="qi-pw2"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
                 </div>
               )}
 
@@ -266,13 +244,23 @@ export function QuickIdentitySetupDialog({ open }: QuickIdentityProps) {
           )}
         </div>
 
-        {needsCreate && phraseRevealed ? (
+        {needsCreate ? (
           <DialogFooter className="border-t bg-muted/20 px-4 py-3 sm:px-6">
-            <Button type="button" className="w-full sm:w-auto" disabled={loading} onClick={handleCreate}>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              disabled={loading}
+              onClick={webAuthnUsable ? handleWebAuthnCreate : handlePasswordCreate}
+            >
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creando…
+                </>
+              ) : webAuthnUsable ? (
+                <>
+                  <Fingerprint className="mr-2 h-4 w-4" />
+                  Activar con este dispositivo
                 </>
               ) : (
                 'Crear identidad y continuar'

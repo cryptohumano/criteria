@@ -44,23 +44,23 @@ function tourStorageSeen(primaryKey: string, legacyKey: string): boolean {
 const WALLET_SPOTLIGHT_STEPS: TourStep[] = [
   {
     id: 'wallet-why',
-    title: 'Por qué existe la wallet',
+    title: 'Por qué existe la llave local',
     body:
-      'CriterIA usa una wallet local (Substrate) para firmar y dar autoría verificable.\n\nPor seguridad, al recargar la app se bloquea y debes desbloquearla para crear o firmar documentos.',
+      'CriterIA guarda en tu dispositivo una llave Substrate (no en nuestros servidores) para firmar y dar autoría verificable.\n\nPor seguridad, al recargar la app el almacén queda bloqueado hasta que lo desbloquees.',
     selector: '[data-tour-id="wallet-banner"]',
   },
   {
     id: 'wallet-unlock',
     title: 'Desbloquear (cuando lo necesites)',
     body:
-      'Pulsa «Desbloquear» e ingresa tu contraseña (o WebAuthn).\n\nAl desbloquear, el aviso desaparece y ya puedes trabajar con documentos.',
+      'Pulsa «Desbloquear». Si activaste el almacén con tu dispositivo, verificación biométrica o PIN del sistema; si usas contraseña local, introdúcela.\n\nAl desbloquear, el aviso desaparece y ya puedes trabajar con documentos.',
     selector: '[data-tour-id="wallet-unlock"]',
   },
   {
     id: 'help-center',
     title: 'Ayuda siempre disponible',
     body:
-      'Si tienes dudas, abre Ayuda (icono «?») para ver tutoriales cortos: wallet, perfiles del agente, exportar Markdown, etc.',
+      'Si tienes dudas, abre Ayuda (icono «?») para ver tutoriales cortos: llave local, perfiles del agente, exportar Markdown, etc.',
     selector: '[data-tour-id="help-button"]',
   },
 ]
@@ -115,7 +115,7 @@ const DOCUMENTS_WALLET_HOME_SECOND: TourStep = {
   id: 'home-docs-card',
   title: 'Documentos',
   body:
-    'Tarjeta de acceso rápido al listado y creación. En modo local, la wallet ya desbloqueada permite generar y firmar PDFs en el dispositivo.',
+    'Tarjeta de acceso rápido al listado y creación. Con la llave local ya desbloqueada en este dispositivo puedes generar y firmar PDFs.',
   selector: '[data-tour-id="tour-home-documents-card"]',
 }
 
@@ -140,7 +140,7 @@ function isQuillEditorPath(pathname: string): boolean {
 export default function MainLayout() {
   const isMobile = useIsMobile()
   const navigate = useNavigate()
-  const { isUnlocked, storedAccountsStatus } = useKeyringContext()
+  const { isUnlocked, storedAccountsStatus, vaultCipherSummary } = useKeyringContext()
   const { session } = useWorkspaceSession()
   const location = useLocation()
   const layoutCtx = useDocumentEditorLayout()
@@ -228,7 +228,7 @@ export default function MainLayout() {
           if (isSaaSWorkspaceMode() && session) openWorkspace()
           else if (!isSaaSWorkspaceMode() && isUnlocked) openWalletHome()
           else {
-            toast.info('Inicia sesión o desbloquea la wallet para ver este recorrido en inicio.')
+            toast.info('Inicia sesión o desbloquea la llave local para ver este recorrido en inicio.')
           }
         }, 400)
         return
@@ -282,7 +282,7 @@ export default function MainLayout() {
     !isUnlocked &&
     storedAccountsStatus !== 'none'
 
-  // Primero tour de documentos (inicio o listado); después, si aplica, tour de wallet bloqueada.
+  // Primero tour de documentos (inicio o listado); después, si aplica, tour de llave local bloqueada.
   useEffect(() => {
     if (!showAppChrome) return
     if (tourOpen) return
@@ -473,25 +473,33 @@ export default function MainLayout() {
                 <Header {...helpHeaderProps} />
               </div>
               {shouldShowUnlockNudge && (
-                <div className="shrink-0 border-b border-border bg-muted/30">
+                <div
+                  className="shrink-0 border-b border-amber-500/55 bg-amber-100 dark:border-amber-400/40 dark:bg-amber-950/75"
+                  role="alert"
+                  aria-live="polite"
+                >
                   <div
                     className={cn(
                       DASHBOARD_MAIN_GUTTER,
-                      'flex items-center gap-2 py-2 text-sm',
+                      'flex items-center gap-2 py-2.5 text-sm text-amber-950 dark:text-amber-50',
                     )}
                     data-tour-id="wallet-banner"
                   >
-                    <Lock className="h-4 w-4 text-muted-foreground" aria-hidden />
+                    <Lock
+                      className="h-4 w-4 shrink-0 text-amber-800 dark:text-amber-300"
+                      aria-hidden
+                    />
                     <div className="min-w-0 flex-1">
-                      <span className="font-medium">Wallet bloqueada.</span>{' '}
-                      <span className="text-muted-foreground">
-                        Para crear/firmar documentos necesitas desbloquear tus cuentas de Substrate en este
-                        dispositivo.
+                      <span className="font-semibold">Llave local bloqueada.</span>{' '}
+                      <span className="text-amber-950/90 dark:text-amber-50/90">
+                        {vaultCipherSummary === 'webauthn'
+                          ? 'Para crear o firmar documentos, desbloquea con huella, rostro o PIN del dispositivo (WebAuthn).'
+                          : 'Para crear o firmar documentos, desbloquea el almacén en este equipo (contraseña local o WebAuthn si lo configuraste).'}
                       </span>
                     </div>
                     <Button
                       size="sm"
-                      variant="outline"
+                      className="shrink-0 border border-amber-900/25 bg-amber-900 text-amber-50 shadow-sm hover:bg-amber-800 hover:text-amber-50 dark:border-amber-300/35 dark:bg-amber-300 dark:text-amber-950 dark:hover:bg-amber-200"
                       onClick={() => setUnlockOpen(true)}
                       data-tour-id="wallet-unlock"
                     >
@@ -519,7 +527,7 @@ export default function MainLayout() {
         >
           <div className="shrink-0 border-b px-4 py-3 pr-12 sm:px-6 sm:py-4 sm:pr-14">
             <DialogHeader className="space-y-0 text-left">
-              <DialogTitle>Desbloquear wallet</DialogTitle>
+              <DialogTitle>Desbloquear llave local</DialogTitle>
             </DialogHeader>
           </div>
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">

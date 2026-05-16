@@ -251,7 +251,7 @@ export default function Documents() {
   }, [listScope, domainFilter, tagFilter])
 
   const domainBadgeVariant = (domain: CriteriaDomain) =>
-    domain === 'legal' ? ('default' as const) : ('secondary' as const)
+    domain === 'legal' ? ('default' as const) : domain === 'creator' ? ('outline' as const) : ('secondary' as const)
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('es-ES', {
@@ -568,6 +568,15 @@ export default function Documents() {
                   >
                     Académico
                   </Button>
+                  <Button
+                    type="button"
+                    variant={domainFilter === 'creator' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setDomainFilter('creator')}
+                    className="text-xs sm:text-sm"
+                  >
+                    Contenido
+                  </Button>
                 </div>
               </div>
               <div className="space-y-2">
@@ -607,13 +616,15 @@ export default function Documents() {
           </CardContent>
         </Card>
       ) : walletLockedWithVault ? (
-        <Card>
+        <Card className="border-amber-500/50 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/35">
           <CardContent className="py-12">
             <div className="text-center space-y-4 max-w-md mx-auto">
-              <Lock className="h-12 w-12 mx-auto text-muted-foreground" />
+              <Lock className="h-12 w-12 mx-auto text-amber-700 dark:text-amber-400" />
               <div>
-                <h3 className="text-lg font-semibold">Monedero bloqueado</h3>
-                <p className="text-muted-foreground mt-1">
+                <h3 className="text-lg font-semibold text-amber-950 dark:text-amber-50">
+                  Monedero bloqueado
+                </h3>
+                <p className="mt-1 text-amber-950/90 dark:text-amber-50/90">
                   Para ver los documentos guardados en este dispositivo, desbloquea la wallet (icono de candado en la
                   barra superior o pantalla de cuentas). Así evitamos mostrar tu biblioteca local sin verificación.
                 </p>

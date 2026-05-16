@@ -62,6 +62,7 @@ import {
   SCORE_API_REMINDER,
   agentSystemPromptForProfile,
   inferAgentProfile,
+  type AgentProfile,
 } from '@/services/criteria/systemPrompts'
 import {
   documentScoreUiLabels,
@@ -102,7 +103,7 @@ export interface DocumentEditorAgentProps {
     contentPlain: string
   }
   /** Override explícito del perfil del agente (por tags del documento). */
-  agentProfileOverride?: 'legal_mx' | 'academic_es'
+  agentProfileOverride?: AgentProfile
   /** Placeholders ya incrustados en el documento y patrones pendientes (texto plano actual). */
   documentPrivacyScan?: {
     embeddedInDocument: PiiReviewRow[]
@@ -194,6 +195,10 @@ function shouldRequireLegalScore(
   }
   if (/^(continúa|continua|sigue|continúe|continúa el análisis)\b/i.test(t)) return true
   if (t.includes('calidad académica') || t.includes('calidad academica')) return true
+  if (t.includes('calidad editorial') || t.includes('engagement') || t.includes('retención') || t.includes('retencion'))
+    return true
+  if (/\b(guion|guión|script|newsletter|carrusel|titular|titulares|cta)\b/.test(t) && /\b(revisa|evalúa|evalua|analiza|mejora)\b/.test(t))
+    return true
   if (t.includes('rigor') && (t.includes('académic') || t.includes('texto') || t.includes('ensayo'))) return true
   if (/\b(rúbrica|rubrica)\b/.test(t)) return true
   if (t.includes('tesis') && (t.includes('evalúa') || t.includes('evalua') || t.includes('revisa'))) return true
@@ -277,9 +282,11 @@ export function DocumentEditorAgent({
     return agentSystemPromptForProfile(profile)
   }, [agentProfileOverride, documentContext?.type])
 
-  const scoreDomain = useMemo<'legal' | 'academic'>(() => {
+  const scoreDomain = useMemo<'legal' | 'academic' | 'creator'>(() => {
     const p = agentProfileOverride ?? inferAgentProfile({ documentType: documentContext?.type })
-    return p === 'legal_mx' ? 'legal' : 'academic'
+    if (p === 'legal_mx') return 'legal'
+    if (p === 'creator_es') return 'creator'
+    return 'academic'
   }, [agentProfileOverride, documentContext?.type])
   const scoreLabels = documentScoreUiLabels(scoreDomain)
   /** Texto plano actual del Quill en el momento de la llamada (evita desfase con el HTML en React). */

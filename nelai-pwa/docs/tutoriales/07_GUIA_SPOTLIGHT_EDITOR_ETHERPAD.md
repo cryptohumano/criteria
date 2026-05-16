@@ -6,7 +6,7 @@ La **primera vez** que abres un documento colaborativo **Etherpad** ya creado (c
 
 Cuando el documento tiene sesión de pad activa (`pad` conectado) y en este navegador **aún no** has marcado como visto el tutorial del editor (`criteria.help.tour.editorEtherpad.v1.seen`).
 
-No sustituye al diálogo de **identidad en el dispositivo**: si es la primera vez y debes crear o desbloquear la wallet, ese paso va primero; el spotlight del editor aparece **después**, al estar ya en el editor con el iframe listo.
+No sustituye al diálogo de **identidad en el dispositivo**: si es la primera vez y debes crear o desbloquear el almacén de la llave local, ese paso va primero; el spotlight del editor aparece **después**, al estar ya en el editor con el iframe listo.
 
 ## Qué explica el recorrido (resumen)
 
