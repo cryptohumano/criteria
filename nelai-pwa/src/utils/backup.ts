@@ -411,7 +411,7 @@ export async function exportBackup(options: {
       description: 'Backup de datos de CriterIA',
       includesImages: includeImages,
       includesPDFs: includePDFs,
-      includesAutographicSignatures,
+      includesAutographicSignatures: includeAutographicSignatures,
     },
   }
 

@@ -739,10 +739,10 @@ export default function DocumentEditor() {
     if (documentId) {
       loadDocument()
     } else {
-      if (accounts.length > 0) {
-        setSelectedAccount(accounts[0].address)
-      } else if (activeAccount) {
+      if (activeAccount && accounts.some((a) => a.address === activeAccount)) {
         setSelectedAccount(activeAccount)
+      } else if (accounts.length > 0) {
+        setSelectedAccount(accounts[0].address)
       }
     }
   }, [documentId, accounts, activeAccount])

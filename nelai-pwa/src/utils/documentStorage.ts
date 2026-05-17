@@ -13,6 +13,13 @@ async function openDB(): Promise<IDBDatabase> {
   return await openSharedDB()
 }
 
+/** Orden «más reciente primero» (actividad = updatedAt, sino createdAt). */
+export function compareDocumentsByRecency(a: Document, b: Document): number {
+  const ta = a.updatedAt ?? a.createdAt
+  const tb = b.updatedAt ?? b.createdAt
+  return tb - ta
+}
+
 /**
  * Guarda un documento en IndexedDB
  */
@@ -96,11 +103,19 @@ export async function getAllDocuments(): Promise<Document[]> {
 
     request.onsuccess = () => {
       const documents = request.result || []
-      documents.sort((a, b) => b.createdAt - a.createdAt)
+      documents.sort(compareDocumentsByRecency)
       resolve(documents)
     }
     request.onerror = () => reject(request.error)
   })
+}
+
+/**
+ * Documentos visibles en listados: todos los del dispositivo.
+ * (El índice `byAccount` no incluye registros sin `relatedAccount` ni otras cuentas.)
+ */
+export async function listDocumentsForUi(): Promise<Document[]> {
+  return getAllDocuments()
 }
 
 /**
@@ -120,7 +135,7 @@ export async function getDocumentsByType(type: Document['type']): Promise<Docume
 
     request.onsuccess = () => {
       const documents = request.result || []
-      documents.sort((a, b) => b.createdAt - a.createdAt)
+      documents.sort(compareDocumentsByRecency)
       resolve(documents)
     }
     request.onerror = () => reject(request.error)
@@ -131,24 +146,10 @@ export async function getDocumentsByType(type: Document['type']): Promise<Docume
  * Obtiene documentos por cuenta
  */
 export async function getDocumentsByAccount(accountAddress: string): Promise<Document[]> {
-  const db = await openDB()
-  if (!db.objectStoreNames.contains(STORE_NAME)) {
-    console.warn(`[Document Storage] ⚠️ Object store '${STORE_NAME}' no existe.`)
-    return []
-  }
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const index = store.index('byAccount')
-    const request = index.getAll(accountAddress)
-
-    request.onsuccess = () => {
-      const documents = request.result || []
-      documents.sort((a, b) => b.createdAt - a.createdAt)
-      resolve(documents)
-    }
-    request.onerror = () => reject(request.error)
-  })
+  const all = await getAllDocuments()
+  return all.filter(
+    (d) => d.relatedAccount === accountAddress || !d.relatedAccount,
+  )
 }
 
 /**

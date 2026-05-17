@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { getAllDocuments, getDocumentsByAccount, type Document } from '@/utils/documentStorage'
+import { listDocumentsForUi } from '@/utils/documentStorage'
+import type { Document } from '@/types/documents'
 import { FileText, Plus, Search, Trash2, Users, Laptop, ChevronDown, Lock } from 'lucide-react'
 import { deleteDocument } from '@/utils/documentStorage'
 import { Input } from '@/components/ui/input'
@@ -83,14 +84,8 @@ export default function Documents() {
         return
       }
 
-      let docs: Document[]
-      if (activeAccount) {
-        docs = await getDocumentsByAccount(activeAccount)
-      } else {
-        docs = await getAllDocuments()
-      }
-
-      docs.sort((a, b) => b.createdAt - a.createdAt)
+      // Todos los PDFs locales del dispositivo (no solo la cuenta activa: el editor puede usar otro autor).
+      let docs = await listDocumentsForUi()
 
       if (listScope === 'collaborative') {
         docs = docs.filter((d) => d.category === 'etherpad')
@@ -109,7 +104,16 @@ export default function Documents() {
   useEffect(() => {
     loadDocuments()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listScope, isUnlocked, storedAccountsStatus, activeAccount])
+  }, [listScope, isUnlocked, storedAccountsStatus])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadDocuments()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listScope, isUnlocked, storedAccountsStatus])
 
   const getAccountDisplayName = (address: string) => {
     const account = accounts.find(acc => acc.address === address)
@@ -840,7 +844,7 @@ export default function Documents() {
                         </div>
                       </TableCell>
                       <TableCell className="align-top text-muted-foreground text-xs whitespace-nowrap">
-                        {formatDate(doc.createdAt)}
+                        {formatDate(doc.updatedAt ?? doc.createdAt)}
                       </TableCell>
                       <TableCell className="align-top text-xs text-muted-foreground hidden lg:table-cell">
                         <div className="space-y-0.5 py-0.5">
