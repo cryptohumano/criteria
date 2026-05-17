@@ -161,6 +161,15 @@ export default defineConfig(({ mode, command }) => {
         changeOrigin: true,
         bypass(req) {
           const pathname = (req.url || '').split('?')[0] || ''
+          // Prefijo `/p` también captura `/product`, `/platform`, `/privacy` (match por prefijo en Vite).
+          if (
+            pathname.startsWith('/product') ||
+            pathname.startsWith('/platform') ||
+            pathname.startsWith('/privacy') ||
+            pathname.startsWith('/marketing')
+          ) {
+            return false
+          }
           if (pathname === '/p' || pathname.startsWith('/p/')) return false
           return '/index.html'
         },
@@ -274,7 +283,8 @@ export default defineConfig(({ mode, command }) => {
       manifest: {
         name: 'criterIA',
         short_name: 'criterIA',
-        description: 'Procedencia y autenticidad verificables con identidad Polkadot y DKG',
+        description:
+          'Redacción legal y académica asistida por IA con procedencia verificable. Editor colaborativo, agente LLM, firma C2PA. Datos en tu dispositivo.',
         theme_color: '#0D9488',
         background_color: '#ffffff',
         display: 'standalone',

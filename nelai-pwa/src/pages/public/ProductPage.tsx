@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PublicPageShell } from '@/components/public/PublicPageShell'
-import { GlitchDualPortrait } from '@/components/public/GlitchDualPortrait'
+import { ProductPageLayout } from '@/components/public/ProductPageLayout'
+import { ProductScreenshotGallery } from '@/components/public/ProductScreenshotGallery'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getAppReleaseLabel } from '@/config/appRelease'
 import { hasWorkspaceApiBase } from '@/config/saasConfig'
+import {
+  PRODUCT_FEATURES,
+  PRODUCT_HERO_IMAGE,
+  PRODUCT_LEAD,
+  PRODUCT_SCREENSHOTS,
+  PRODUCT_STRIPE_NOTE,
+  productAssetUrl,
+} from '@/content/productPageContent'
 import { fetchBillingPlans, type BillingPlanPublic } from '@/services/billing/billingApi'
-import { FileText, FlaskConical, Scale, Shield, Sparkles, Users } from 'lucide-react'
-
-const brandPhotoSrc = `${import.meta.env.BASE_URL}brand/peranto-identity.png`
-const brandAsciiSrc = `${import.meta.env.BASE_URL}brand/peranto-identity-ascii.png`
+import { Check } from 'lucide-react'
 
 function formatUsd(n: number | null): string {
   if (n == null) return '—'
@@ -63,12 +68,11 @@ function ProductPlansPreview() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Planes de pago</CardTitle>
+          <CardTitle>Catálogo en vivo</CardTitle>
           <CardDescription>
-            El catálogo en vivo se obtiene del API de la plataforma. Si estás en modo solo-wallet, configura el backend
-            (<code className="text-[10px]">VITE_API_USE_SAME_ORIGIN</code> o <code className="text-[10px]">VITE_API_BASE_URL</code>)
-            para ver precios aquí; con sesión iniciada, los mismos planes aparecen en{' '}
-            <strong className="text-foreground">Ajustes → Facturación</strong>.
+            Con el API de plataforma configurado verás aquí los mismos planes que en{' '}
+            <strong className="text-foreground">Ajustes → Facturación</strong>. En modo solo-wallet, autohospeda con tu
+            API key o configura <code className="text-[10px]">VITE_API_USE_SAME_ORIGIN</code>.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -83,13 +87,13 @@ function ProductPlansPreview() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Planes de pago</CardTitle>
+        <CardTitle>Catálogo en vivo</CardTitle>
         <CardDescription>
-          Referencia pública del catálogo (Stripe). Para contratar o gestionar suscripción hace falta{' '}
+          Referencia pública (Stripe). Para contratar o gestionar la suscripción,{' '}
           <Link to="/login" className="text-primary underline-offset-4 hover:underline">
-            iniciar sesión
+            inicia sesión
           </Link>{' '}
-          y usar <strong className="text-foreground">Ajustes → Facturación</strong> en tu organización.
+          y usa <strong className="text-foreground">Ajustes → Facturación</strong>.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -127,155 +131,140 @@ function ProductPlansPreview() {
   )
 }
 
-export default function ProductPage() {
+function ProductHero() {
+  const heroSrc = productAssetUrl(PRODUCT_HERO_IMAGE.src)
+
   return (
-    <PublicPageShell backTo={{ href: '/login', label: 'Entrar' }}>
-      <div className="space-y-12">
-        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-          <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-widest">
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(280px,520px)] lg:items-center lg:gap-10 xl:gap-12">
+      <div className="space-y-6 text-center lg:text-left">
+        <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+          <Badge
+            variant="outline"
+            className="border-teal-500/40 bg-teal-500/10 font-mono text-[10px] uppercase tracking-[0.22em] text-teal-300"
+          >
             {getAppReleaseLabel()}
           </Badge>
         </div>
-
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] lg:items-start lg:gap-12">
-          <div className="space-y-5 text-center sm:text-left">
-            <div>
-              <p className="text-sm font-medium text-primary">CriterIA</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Un producto de <span className="font-medium text-foreground">Peranto</span>
-              </p>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Un IDE de textos con criterio asistido
-            </h1>
-            <p className="text-base text-muted-foreground leading-relaxed">
-              CriterIA es el espacio donde escribes, iteras y firmas: un entorno de trabajo centrado en el documento,
-              con una IA que actúa como <strong className="text-foreground">ayudante persistente</strong> — no para
-              sustituir tu juicio, sino para <strong className="text-foreground">aclarar criterios</strong>, señalar
-              riesgos y acelerar lo que hoy te quita tiempo innecesario.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center sm:justify-start pt-1">
-              <Button asChild size="lg">
-                <Link to="/login">Iniciar sesión</Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link to="/register">Crear cuenta</Link>
-              </Button>
-            </div>
-          </div>
-
-          <figure className="mx-auto w-full max-w-[280px] lg:mx-0 lg:max-w-none">
-            <GlitchDualPortrait
-              photoSrc={brandPhotoSrc}
-              asciiSrc={brandAsciiSrc}
-              alt="Identidad visual Peranto para CriterIA, alternando retrato e ilustración tipo ASCII"
-            />
-            <figcaption className="mt-3 text-center text-xs text-muted-foreground leading-snug lg:text-left">
-              Identidad Peranto: fundido entre retrato e ilustración ASCII. Cercanía humana, rigor y mirada directa al
-              problema del texto.
-            </figcaption>
-          </figure>
+        <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-teal-400/95">
+          Redacción · Legal · Académico · IA
+        </p>
+        <h1 className="product-page-serif text-3xl font-normal leading-[1.15] tracking-tight text-white sm:text-4xl lg:text-[2.65rem]">
+          Redacción legal y académica asistida por IA
+        </h1>
+        <p className="text-base leading-relaxed text-white/78 sm:text-lg">{PRODUCT_LEAD}</p>
+        <div className="flex flex-col justify-center gap-3 pt-1 sm:flex-row lg:justify-start">
+          <Button size="lg" className="border-0 bg-teal-600 text-white hover:bg-teal-500" asChild>
+            <Link to="/login">Iniciar sesión</Link>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white"
+            asChild
+          >
+            <Link to="/register">Crear cuenta</Link>
+          </Button>
         </div>
+      </div>
 
-        <section className="space-y-4 rounded-xl border border-border/80 bg-muted/20 px-4 py-6 sm:px-6 sm:py-8">
-          <h2 className="text-lg font-semibold tracking-tight">La narrativa: criterio, no piloto automático</h2>
-          <div className="space-y-3 text-sm text-muted-foreground leading-relaxed sm:text-base">
-            <p>
-              Si no eres abogado y debes revisar un contrato, la IA puede ayudarte a <strong className="text-foreground">ordenar dudas</strong>, resumir cláusulas sensibles y prepararte para decidir si firmas — con la humildad de señalar cuando{' '}
-              <strong className="text-foreground">hace falta un especialista</strong>. Un abogado verá el mismo
-              documento con otro marco; CriterIA no compite con eso: da capas de lectura y borradores para que el
-              criterio humano (el tuyo o el de tu despacho) siga al centro.
+      <figure className="mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none">
+        <div className="product-hero-shot overflow-hidden rounded-xl border border-white/15 bg-[#0f1628] shadow-2xl shadow-black/50 ring-1 ring-white/10">
+          <img
+            src={heroSrc}
+            alt={PRODUCT_HERO_IMAGE.alt}
+            className="block h-auto w-full max-h-[min(52vh,420px)] object-contain object-top lg:max-h-[min(58vh,480px)]"
+            width={1280}
+            height={800}
+            fetchPriority="high"
+            decoding="async"
+          />
+        </div>
+        <figcaption className="mt-3 text-center text-xs leading-snug text-white/55 lg:text-left">
+          {PRODUCT_HERO_IMAGE.caption}
+        </figcaption>
+      </figure>
+    </div>
+  )
+}
+
+export default function ProductPage() {
+  return (
+    <ProductPageLayout hero={<ProductHero />}>
+      <div className="mx-auto max-w-6xl space-y-16 px-4 py-12 sm:px-6 sm:py-16">
+        <section id="caracteristicas" className="scroll-mt-24 space-y-8">
+          <div className="space-y-2">
+            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-teal-600 dark:text-teal-400">
+              Características
             </p>
-            <p>
-              En investigación, el asistente puede volverse un <strong className="text-foreground">compañero de método</strong>: señalar huecos metodológicos, incoherencias entre secciones o riesgos en el diseño, para que prototipes y ensayes
-              más rápido sin confundir velocidad con solidez. La idea es que la IA te devuelva tiempo en lo repetible y
-              te empuje a <strong className="text-foreground">mejorar el argumento</strong>, no a publicar a ciegas.
-            </p>
-            <p>
-              Para <strong className="text-foreground">organizaciones</strong> y para{' '}
-              <strong className="text-foreground">equipos legales o de investigación</strong> el modelo es el mismo:
-              mismo editor, mismos flujos de revisión y de firma cuando lo necesitéis; la diferencia está en el perfil
-              (académico frente a legal) y en cómo integráis la wallet y la colaboración en vuestro proceso.
-            </p>
+            <h2 className="product-page-serif text-2xl font-normal tracking-tight sm:text-3xl">
+              Todo lo que necesitas en un solo flujo
+            </h2>
           </div>
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {PRODUCT_FEATURES.map((f) => (
+              <li
+                key={f.title}
+                className="flex gap-3 rounded-xl border border-border/80 bg-card/60 p-4 shadow-sm"
+              >
+                <Check className="mt-0.5 h-5 w-5 shrink-0 text-teal-600 dark:text-teal-400" aria-hidden />
+                <div className="min-w-0 space-y-1">
+                  <p className="font-medium leading-snug">{f.title}</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-2">
-              <FileText className="h-8 w-8 text-primary mb-1" />
-              <CardTitle className="text-lg">IDE de textos</CardTitle>
-              <CardDescription>
-                Editor rico, PDF, vista previa y pistas de formato pensadas para trabajar el documento como pieza
-                central — local, colaborativa (Etherpad) o en equipo según tu despliegue.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <Sparkles className="h-8 w-8 text-primary mb-1" />
-              <CardTitle className="text-lg">IA como guía continua</CardTitle>
-              <CardDescription>
-                Análisis estructurado, sugerencias de redacción y recordatorios de rigor (metodología o cumplimiento)
-                mientras escribes; siempre con control de privacidad y con la opción de traer vuestra propia API.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex gap-2 mb-1">
-                <FlaskConical className="h-8 w-8 text-primary" />
-                <Scale className="h-8 w-8 text-primary opacity-90" />
-              </div>
-              <CardTitle className="text-lg">Investigación y legal</CardTitle>
-              <CardDescription>
-                Perfiles distintos para el mismo hábito: detectar fallas metodológicas o riesgos contractuales, preparar
-                preguntas para un asesor y dejar constancia de lo que ya revisaste en el propio flujo de trabajo.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <Shield className="h-8 w-8 text-primary mb-1" />
-              <CardTitle className="text-lg">Procedencia y firma</CardTitle>
-              <CardDescription>
-                Wallet Substrate en tu dispositivo para dar autenticidad verificable a lo que firmas; desbloqueo
-                explícito y trazabilidad alineada con la idea de “saber qué estás sellando”.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card className="sm:col-span-2">
-            <CardHeader className="pb-2">
-              <Users className="h-8 w-8 text-primary mb-1" />
-              <CardTitle className="text-lg">Organizaciones y especialistas</CardTitle>
-              <CardDescription>
-                Cuentas personales o de equipo, sesión de plataforma cuando uséis el modo SaaS, y los mismos ciclos de
-                borrador → revisión → firma tanto si sois un grupo de investigación como un despacho que itera contratos
-                en paralelo.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
+        <section id="plataforma" className="scroll-mt-24 space-y-6">
+          <div className="space-y-2">
+            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-teal-600 dark:text-teal-400">
+              La plataforma en uso
+            </p>
+            <h2 className="product-page-serif text-2xl font-normal tracking-tight sm:text-3xl">
+              Haz clic en una captura para ampliarla
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Vista del editor con asistente, evaluación académica, biblioteca local, bitácora de fuentes, identidad y
+              WebAuthn.
+            </p>
+          </div>
+          <ProductScreenshotGallery shots={PRODUCT_SCREENSHOTS} />
+        </section>
 
-        <ProductPlansPreview />
+        <section id="planes" className="scroll-mt-24 space-y-6">
+          <div className="space-y-2">
+            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-teal-600 dark:text-teal-400">
+              Plan gestionado (Stripe, opcional)
+            </p>
+            <h2 className="product-page-serif text-2xl font-normal tracking-tight sm:text-3xl">
+              Autohospedable primero
+            </h2>
+          </div>
+          <Card className="border-dashed bg-muted/25">
+            <CardContent className="pt-6 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {PRODUCT_STRIPE_NOTE}
+            </CardContent>
+          </Card>
+          <ProductPlansPreview />
+        </section>
 
-        <Card className="border-dashed bg-muted/30">
-          <CardHeader>
-            <CardTitle className="text-base">Información legal</CardTitle>
-            <CardDescription>
-              Textos en revisión; conviene validarlos con asesoría antes de producción.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
+        <section className="rounded-xl border border-border/80 bg-card/40 px-4 py-6 sm:px-6">
+          <h2 className="text-base font-semibold">Información legal</h2>
+          <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+            El código es autohospedable bajo licencia FSL-1.1-MIT (resumen y condiciones del servicio en términos). Textos en
+            revisión; conviene validarlos con asesoría antes de producción.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
             <Button variant="secondary" size="sm" asChild>
               <Link to="/legal/terminos">Términos y condiciones</Link>
             </Button>
             <Button variant="secondary" size="sm" asChild>
               <Link to="/legal/privacidad">Aviso de privacidad</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
-    </PublicPageShell>
+    </ProductPageLayout>
   )
 }

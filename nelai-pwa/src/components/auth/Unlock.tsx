@@ -145,12 +145,12 @@ export function Unlock({ variant = 'page' }: UnlockProps) {
               <p className="mt-0.5 max-w-full whitespace-normal break-words text-xs leading-snug text-muted-foreground sm:text-sm">
                 {isDialog ? (
                   <>
-                    Procedencia y autenticidad
+                    Redacción legal y académica
                     <br />
-                    verificables
+                    asistida por IA
                   </>
                 ) : (
-                  'Procedencia y autenticidad verificables'
+                  'Redacción legal y académica asistida por IA'
                 )}
               </p>
             </div>

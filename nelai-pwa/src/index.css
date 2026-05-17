@@ -444,3 +444,28 @@ button.theme-toggle-button:hover,
 button[class*="theme-toggle-button"]:hover {
   background-color: hsl(var(--muted) / 0.8) !important;
 }
+
+/* /producto — hero alineado con sitio Peranto (navy + teal + serif) */
+.product-page-hero {
+  background:
+    radial-gradient(ellipse 70% 55% at 85% 15%, rgb(13 148 136 / 0.18), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 10% 80%, rgb(59 130 246 / 0.08), transparent 50%),
+    #0a0f1a;
+}
+
+.product-page-serif {
+  font-family: Georgia, 'Times New Roman', Times, serif;
+}
+
+.product-page-header .theme-toggle-button {
+  background-color: rgb(255 255 255 / 0.08) !important;
+  color: rgb(255 255 255 / 0.9);
+}
+
+.product-page-header .theme-toggle-button:hover {
+  background-color: rgb(255 255 255 / 0.14) !important;
+}
+
+.product-hero-shot {
+  min-height: 12rem;
+}
