@@ -242,10 +242,9 @@ export default defineConfig(({ mode, command }) => {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB (aumentado de 2 MB por defecto)
         runtimeCaching: [
           {
-            // Proxy / API en otro origen (p. ej. http://localhost:3456) — sin caché del SW
-            urlPattern: ({ url }: { url: URL }) =>
-              (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
-              url.pathname.startsWith('/api/'),
+            // API same-origin (prod y dev): nunca cachear ni usar NetworkFirst en /api/*
+            urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) =>
+              sameOrigin && url.pathname.startsWith('/api/'),
             handler: 'NetworkOnly',
             options: {},
           },
@@ -260,10 +259,10 @@ export default defineConfig(({ mode, command }) => {
             }
           },
           {
-            // Regla general para otros recursos externos
-            // Excluir explícitamente staticmap para que use la regla anterior (NetworkOnly)
-            urlPattern: ({ url }: { url: URL }) => {
-              // Solo procesar URLs HTTPS que NO sean de staticmap
+            // Recursos HTTPS externos (CDN, APIs de terceros). No same-origin: las rutas SPA
+            // (/documents/…/edit-quill, etc.) deben usar navigateFallback → index.html.
+            urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) => {
+              if (sameOrigin) return false
               return url.protocol === 'https:' && !url.hostname.includes('staticmap.openstreetmap')
             },
             handler: 'NetworkFirst',
