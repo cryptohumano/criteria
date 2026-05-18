@@ -44,6 +44,19 @@ function getEtherpadConfig() {
   return { baseUrl, apiKey, publicUrl }
 }
 
+/** Mensaje útil cuando Node no puede abrir TCP hacia Etherpad (puerto/host en Railway). */
+function formatEtherpadReachabilityError(e: unknown, baseUrl?: string): string {
+  if (e instanceof EtherpadApiError) return e.message
+  const err = e as NodeJS.ErrnoException & { cause?: NodeJS.ErrnoException }
+  const code = err.cause?.code || err.code
+  const hint =
+    code === 'ECONNREFUSED' || code === 'ENOTFOUND' || err.message === 'fetch failed'
+      ? ` No se pudo conectar a ${baseUrl || 'Etherpad'}. En Railway: servicio etherpad Online, PORT=9001 en etherpad, y ETHERPAD_INTERNAL_URL=http://\${{etherpad.RAILWAY_PRIVATE_DOMAIN}}:\${{etherpad.PORT}} en criteria.`
+      : ''
+  const core = e instanceof Error ? e.message : String(e)
+  return core + hint
+}
+
 /** Encadena llamadas Etherpad por organización para evitar dos grupos distintos en paralelo (session vs content). */
 const etherpadOrgTail = new Map<string, Promise<unknown>>()
 
@@ -137,8 +150,8 @@ export function createPadsRouter(requireUser: RequestHandler) {
         expiresAt: null as string | null,
       })
     } catch (e: unknown) {
-      const msg = e instanceof EtherpadApiError ? e.message : e instanceof Error ? e.message : String(e)
-      console.error('[pads/session]', e)
+      const msg = formatEtherpadReachabilityError(e, baseUrl)
+      console.error('[pads/session]', msg, e)
       return res.status(502).json({ error: `Etherpad: ${msg}` })
     }
   })
@@ -165,8 +178,8 @@ export function createPadsRouter(requireUser: RequestHandler) {
       const text = await getPadText(baseUrl, apiKey, padId)
       res.json({ padId, format: 'text', content: text })
     } catch (e: unknown) {
-      const msg = e instanceof EtherpadApiError ? e.message : e instanceof Error ? e.message : String(e)
-      console.error('[pads/content]', e)
+      const msg = formatEtherpadReachabilityError(e, baseUrl)
+      console.error('[pads/content]', msg, e)
       return res.status(502).json({ error: `Etherpad: ${msg}` })
     }
   })
