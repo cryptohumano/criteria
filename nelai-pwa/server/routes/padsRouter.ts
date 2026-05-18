@@ -35,10 +35,12 @@ function pruneProposals() {
 }
 
 function getEtherpadConfig() {
-  const baseUrl = process.env.ETHERPAD_BASE_URL?.trim()
+  // Railway/documentación usan ETHERPAD_INTERNAL_URL; en local suele ser ETHERPAD_BASE_URL.
+  const baseUrl =
+    process.env.ETHERPAD_BASE_URL?.trim() || process.env.ETHERPAD_INTERNAL_URL?.trim()
   const apiKey = process.env.ETHERPAD_API_KEY?.trim()
   const publicUrl =
-    (process.env.ETHERPAD_PUBLIC_URL || baseUrl || '').trim() || '/pad'
+    (process.env.ETHERPAD_PUBLIC_URL || '').trim() || '/pad'
   return { baseUrl, apiKey, publicUrl }
 }
 

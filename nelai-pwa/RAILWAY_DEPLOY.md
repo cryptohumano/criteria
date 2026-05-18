@@ -122,6 +122,7 @@ DATABASE_URL=${{criteria-postgres.DATABASE_URL}}
 
 # === Etherpad (red privada) ===
 ETHERPAD_INTERNAL_URL=http://${{etherpad.RAILWAY_PRIVATE_DOMAIN}}:9001
+# El API usa ETHERPAD_INTERNAL_URL si falta ETHERPAD_BASE_URL (misma URL en Railway).
 ETHERPAD_PUBLIC_URL=/pad
 ETHERPAD_API_KEY=<MISMO valor que el servicio etherpad>
 
@@ -280,6 +281,8 @@ retornar 2xx salvo donde se indique.
 | Login Google: `redirect_uri_mismatch` | URI no autorizado | Añade exactamente `https://<dominio>/api/auth/google/callback` en Google Console. |
 | Google OAuth o **enlace del correo de verificación** abre la app y sale **404** (React Router) | El Service Worker (PWA) servía `index.html` para navegaciones a `/api/...` | Despliega el build que excluye `/api/` del `navigateFallback` de Workbox (`vite.config.ts`). Luego borra datos del sitio o anula el SW en DevTools y recarga. |
 | Consola: `no-response` en rutas SPA (`/documents/…/edit-quill`, etc.) | Workbox aplicaba `NetworkFirst` a todo HTTPS, incluido el mismo origen | Build con `sameOrigin` excluido de la regla externa en `vite.config.ts`. Borra datos del sitio una vez para quitar el SW antiguo. |
+| `503` en `/api/docs/…/pad/session` o `pad/content` | Falta Etherpad o solo definiste `ETHERPAD_INTERNAL_URL` en una versión antigua del API | En `criteria-api`: `ETHERPAD_INTERNAL_URL`, `ETHERPAD_API_KEY`, `ETHERPAD_PUBLIC_URL=/pad`; servicio `etherpad` desplegado en red privada. Redeploy del API. |
+| `runtime.lastError: Receiving end does not exist` | Extensión del navegador (p. ej. wallet) | Ignorar o probar en ventana de incógnito sin extensiones. |
 | Enlace del correo apunta a `http://127.0.0.1:3456/...` | Falta URL pública en el servidor | Define `AUTH_API_PUBLIC_URL=https://<tu-dominio>` (o solo `AUTH_FRONTEND_ORIGIN` si PWA y API comparten el mismo origen; el API deduce la base para el correo). |
 | Rate limits bloquean a todos | falta `app.set('trust proxy', 1)` | Ya está aplicado; si lo cambiaste, restaura. |
 | PWA pide `/nelai/...` | build sin `VITE_BASE_URL=/` | El Dockerfile lo fuerza; si compilaste local, exporta la var antes de `yarn build`. |
