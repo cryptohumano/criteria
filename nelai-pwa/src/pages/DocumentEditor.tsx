@@ -102,6 +102,7 @@ import {
   downloadResearchEvidenceJson,
   normalizeResearchEvidenceLog,
   parseResearchEvidenceLogImportJson,
+  togglePinnedResearchEvidenceId,
 } from '@/utils/researchEvidenceLog'
 
 /** Texto plano alineado con el estado React del editor (Quill puede ir un tick detrás). */
@@ -185,6 +186,7 @@ export default function DocumentEditor() {
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
   const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
   const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
+  const [pinnedResearchEvidenceIds, setPinnedResearchEvidenceIds] = useState<string[]>([])
   const importResearchEvidenceInputRef = useRef<HTMLInputElement>(null)
   const [agentOpen, setAgentOpen] = useState(() => entryIntentInitial !== null)
   const [agentProfile, setAgentProfile] = useState<AgentProfile>(() => {
@@ -619,6 +621,21 @@ export default function DocumentEditor() {
     [documentId],
   )
 
+  const toggleEvidencePin = useCallback(
+    async (entryId: string) => {
+      const next = togglePinnedResearchEvidenceId(pinnedResearchEvidenceIds, entryId)
+      setPinnedResearchEvidenceIds(next)
+      if (!documentId) return
+      try {
+        await updateDocument(documentId, { pinnedResearchEvidenceIds: next })
+      } catch (e) {
+        console.error('[Document Editor] anclar fuente', e)
+        toast.error('No se pudo guardar la fuente anclada')
+      }
+    },
+    [documentId, pinnedResearchEvidenceIds],
+  )
+
   const handlePickImportResearchEvidenceJson = useCallback(() => {
     importResearchEvidenceInputRef.current?.click()
   }, [])
@@ -692,7 +709,10 @@ export default function DocumentEditor() {
     if (!sourcesModalOpen) return
     if (documentId) {
       void getDocument(documentId).then((d) => {
-        if (d) setResearchEvidenceLog(normalizeResearchEvidenceLog(d.researchEvidenceLog))
+        if (d) {
+          setResearchEvidenceLog(normalizeResearchEvidenceLog(d.researchEvidenceLog))
+          setPinnedResearchEvidenceIds(d.pinnedResearchEvidenceIds ?? [])
+        }
       })
       return
     }
@@ -781,6 +801,7 @@ export default function DocumentEditor() {
       setEncrypt(doc.encrypted || false)
       setChatHistory(doc.chatHistory || [])
       setResearchEvidenceLog(normalizeResearchEvidenceLog(doc.researchEvidenceLog))
+      setPinnedResearchEvidenceIds(doc.pinnedResearchEvidenceIds ?? [])
       setChatSessionKey((k) => k + 1)
       setAppliedMods(doc.appliedMods || {})
       setVersions(doc.versions || [])
@@ -1521,6 +1542,8 @@ export default function DocumentEditor() {
               }}
               onResearchEvidenceAppend={appendResearchEvidenceFromAgent}
               researchEvidenceAddedBy={selectedAccount}
+              researchEvidenceLog={researchEvidenceLog}
+              pinnedResearchEvidenceIds={pinnedResearchEvidenceIds}
               documentContext={{
                 title,
                 type,
@@ -1752,9 +1775,8 @@ export default function DocumentEditor() {
               Bitácora de fuentes
             </DialogTitle>
             <DialogDescription>
-              URLs registradas desde el chat del agente (mensajes usuario y asistente, citas de búsqueda). Se guardan en
-              este documento. Puedes importar el mismo formato que «Exportar JSON»; las entradas se fusionan sin duplicar
-              ids.
+              URLs y consultas web de Gemini registradas desde el agente. Marca fuentes con el pin para priorizarlas en
+              el siguiente mensaje. Importa/exporta JSON o CSV.
             </DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
@@ -1794,6 +1816,9 @@ export default function DocumentEditor() {
             </Button>
             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
               {researchEvidenceLog.length} entrada{researchEvidenceLog.length === 1 ? '' : 's'}
+              {pinnedResearchEvidenceIds.length > 0
+                ? ` · ${pinnedResearchEvidenceIds.length} anclada${pinnedResearchEvidenceIds.length === 1 ? '' : 's'}`
+                : ''}
             </span>
           </div>
           <div className="flex min-h-0 flex-1 flex-col bg-muted/15">
@@ -1807,6 +1832,8 @@ export default function DocumentEditor() {
                 <ResearchEvidenceLogTable
                   entries={[...researchEvidenceLog].reverse()}
                   onPersistUserComment={persistEvidenceUserComment}
+                  pinnedIds={pinnedResearchEvidenceIds}
+                  onTogglePin={(id) => void toggleEvidencePin(id)}
                 />
               )}
             </div>

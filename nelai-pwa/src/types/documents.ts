@@ -131,6 +131,8 @@ export type ResearchEvidenceLogOrigin =
   | 'assistant_message'
   | 'user_attachment'
   | 'document_scan'
+  /** Consultas web reportadas por Gemini (grounding) sin URL concreta en ese turno. */
+  | 'grounding_queries'
 
 /** Anclaje del evento a una revisión del documento (PDF / versión). */
 export interface ResearchEvidenceDocumentAnchor {
@@ -172,6 +174,8 @@ export interface ResearchEvidenceLogEntry {
   userComment?: string
   /** Si este evento matiza o reemplaza la lectura de otro registro de la bitácora. */
   supersedesId?: string
+  /** Consultas web que el proveedor (p. ej. Gemini grounding) ejecutó en este turno. */
+  webSearchQueries?: string[]
 }
 
 export interface Document {
@@ -265,6 +269,8 @@ export interface Document {
    * Los documentos antiguos pueden no tener el campo; usar `normalizeResearchEvidenceLog` en `@/utils/researchEvidenceLog` al leer.
    */
   researchEvidenceLog?: ResearchEvidenceLogEntry[]
+  /** IDs de entradas de `researchEvidenceLog` que el usuario prioriza en el agente. */
+  pinnedResearchEvidenceIds?: string[]
 }
 
 export interface ExternalAPIConfig {

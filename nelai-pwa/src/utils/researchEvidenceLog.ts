@@ -5,6 +5,11 @@ import type {
 } from '@/types/documents'
 import { absoluteHttpUrlFromLooseTarget } from '@/utils/externalHref'
 
+/** Marcador estable para entradas solo de consultas web (sin URL externa). */
+export const GROUNDING_EVIDENCE_URL = 'https://criteria.app/evidence/grounding'
+
+const MAX_PINNED_SOURCES = 12
+
 /** Documentos antiguos sin campo: tratar como lista vacía al leer. */
 export function normalizeResearchEvidenceLog(
   log: ResearchEvidenceLogEntry[] | undefined
@@ -335,6 +340,19 @@ export function buildResearchEvidenceEntries(
   }))
 }
 
+function normalizeWebSearchQueries(queries: string[] | undefined): string[] | undefined {
+  if (!queries?.length) return undefined
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const q of queries) {
+    const t = q.trim()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t.length > 500 ? t.slice(0, 500) : t)
+  }
+  return out.length ? out : undefined
+}
+
 export function buildResearchEvidenceEntriesFromRefs(
   documentId: string,
   refs: AssistantSourceRef[],
@@ -345,6 +363,7 @@ export function buildResearchEvidenceEntriesFromRefs(
     accessedAt?: number
     createdAt?: number
     indexedFromUserPrompt?: string
+    webSearchQueries?: string[]
   }
 ): ResearchEvidenceLogEntry[] {
   const now = options.createdAt ?? Date.now()
@@ -353,6 +372,7 @@ export function buildResearchEvidenceEntriesFromRefs(
     options.indexedFromUserPrompt && options.indexedFromUserPrompt.trim()
       ? options.indexedFromUserPrompt.trim().slice(0, 8000)
       : undefined
+  const queries = normalizeWebSearchQueries(options.webSearchQueries)
   return refs.map((r) => ({
     id: newEvidenceId(),
     documentId,
@@ -365,7 +385,96 @@ export function buildResearchEvidenceEntriesFromRefs(
     ...(options.chatHistoryIndex !== undefined ? { chatHistoryIndex: options.chatHistoryIndex } : {}),
     ...(options.addedBy ? { addedBy: options.addedBy } : {}),
     ...(prompt ? { indexedFromUserPrompt: prompt } : {}),
+    ...(queries ? { webSearchQueries: queries } : {}),
   }))
+}
+
+/** Entrada cuando Gemini reportó consultas web pero no devolvió URLs en grounding. */
+export function buildResearchEvidenceGroundingQueriesEntry(
+  documentId: string,
+  webSearchQueries: string[],
+  options: {
+    chatHistoryIndex?: number
+    addedBy?: string
+    accessedAt?: number
+    createdAt?: number
+    indexedFromUserPrompt?: string
+  }
+): ResearchEvidenceLogEntry | null {
+  const queries = normalizeWebSearchQueries(webSearchQueries)
+  if (!queries?.length) return null
+  const now = options.createdAt ?? Date.now()
+  const accessed = options.accessedAt ?? now
+  const prompt =
+    options.indexedFromUserPrompt && options.indexedFromUserPrompt.trim()
+      ? options.indexedFromUserPrompt.trim().slice(0, 8000)
+      : undefined
+  return {
+    id: newEvidenceId(),
+    documentId,
+    createdAt: now,
+    accessedAt: accessed,
+    url: GROUNDING_EVIDENCE_URL,
+    title: 'Consultas web (grounding)',
+    snippet: queries.join(' · ').slice(0, 8000),
+    origin: 'grounding_queries',
+    webSearchQueries: queries,
+    ...(options.chatHistoryIndex !== undefined ? { chatHistoryIndex: options.chatHistoryIndex } : {}),
+    ...(options.addedBy ? { addedBy: options.addedBy } : {}),
+    ...(prompt ? { indexedFromUserPrompt: prompt } : {}),
+  }
+}
+
+/** Fuentes del asistente + consultas grounding en un solo append. */
+export function buildAssistantResearchEvidenceBatch(
+  documentId: string,
+  refs: AssistantSourceRef[],
+  webSearchQueries: string[] | undefined,
+  options: {
+    chatHistoryIndex?: number
+    addedBy?: string
+    indexedFromUserPrompt?: string
+  }
+): ResearchEvidenceLogEntry[] {
+  const fromRefs = buildResearchEvidenceEntriesFromRefs(documentId, refs, {
+    origin: 'assistant_message',
+    ...options,
+    webSearchQueries,
+  })
+  if (fromRefs.length || !webSearchQueries?.length) return fromRefs
+  const grounding = buildResearchEvidenceGroundingQueriesEntry(documentId, webSearchQueries, options)
+  return grounding ? [grounding] : []
+}
+
+/** Bloque de contexto para priorizar fuentes ancladas en el agente. */
+export function buildPinnedSourcesContextBlock(
+  log: ResearchEvidenceLogEntry[] | undefined,
+  pinnedIds: string[] | undefined
+): string {
+  if (!pinnedIds?.length || !log?.length) return ''
+  const byId = new Map(log.map((e) => [e.id, e]))
+  const lines: string[] = []
+  for (const id of pinnedIds.slice(0, MAX_PINNED_SOURCES)) {
+    const e = byId.get(id)
+    if (!e || e.origin === 'grounding_queries') continue
+    const label = e.title?.trim() || formatResearchEvidenceUrlDisplay(e.url, e.title)
+    lines.push(`- ${label} — ${e.url}`)
+    if (e.snippet?.trim()) lines.push(`  Contexto: ${e.snippet.trim().slice(0, 400)}`)
+  }
+  if (!lines.length) return ''
+  return (
+    `\n\nFuentes ancladas por el usuario (priorízalas; cita con URL cuando uses su contenido):\n${lines.join('\n')}`
+  )
+}
+
+export function togglePinnedResearchEvidenceId(
+  current: string[] | undefined,
+  entryId: string
+): string[] {
+  const ids = current ?? []
+  if (ids.includes(entryId)) return ids.filter((id) => id !== entryId)
+  const next = [...ids, entryId]
+  return next.length > MAX_PINNED_SOURCES ? next.slice(-MAX_PINNED_SOURCES) : next
 }
 
 function escCsvCell(s: string): string {
@@ -400,6 +509,7 @@ export function downloadResearchEvidenceCsv(
     'origin',
     'chatHistoryIndex',
     'addedBy',
+    'webSearchQueries',
   ]
   const lines = [
     header.join(','),
@@ -416,6 +526,7 @@ export function downloadResearchEvidenceCsv(
         escCsvCell(e.origin),
         e.chatHistoryIndex ?? '',
         escCsvCell(e.addedBy ?? ''),
+        escCsvCell((e.webSearchQueries ?? []).join(' | ')),
       ].join(','),
     ),
   ]
@@ -432,6 +543,7 @@ const IMPORT_ORIGINS: ReadonlySet<ResearchEvidenceLogOrigin> = new Set([
   'assistant_message',
   'user_attachment',
   'document_scan',
+  'grounding_queries',
 ])
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -505,7 +617,7 @@ export function parseResearchEvidenceLogImportJson(
           : `ev_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
 
     const urlRaw = typeof item.url === 'string' ? item.url.trim() : ''
-    const url =
+    let url =
       urlRaw && (urlRaw.startsWith('http://') || urlRaw.startsWith('https://'))
         ? urlRaw
         : absoluteHttpUrlFromLooseTarget(urlRaw)
@@ -519,6 +631,9 @@ export function parseResearchEvidenceLogImportJson(
       typeof originRaw === 'string' && IMPORT_ORIGINS.has(originRaw as ResearchEvidenceLogOrigin)
         ? (originRaw as ResearchEvidenceLogOrigin)
         : null
+    if (origin === 'grounding_queries' && url !== GROUNDING_EVIDENCE_URL) {
+      url = GROUNDING_EVIDENCE_URL
+    }
     if (!origin) {
       skipped += 1
       continue
@@ -562,6 +677,19 @@ export function parseResearchEvidenceLogImportJson(
 
     const anchor = parseImportedAnchor(item.anchor)
     if (anchor) entry.anchor = anchor
+
+    const webQueriesRaw = item.webSearchQueries
+    if (Array.isArray(webQueriesRaw)) {
+      const wq = normalizeWebSearchQueries(
+        webQueriesRaw.filter((q): q is string => typeof q === 'string'),
+      )
+      if (wq) entry.webSearchQueries = wq
+    } else if (typeof webQueriesRaw === 'string' && webQueriesRaw.trim()) {
+      const wq = normalizeWebSearchQueries(
+        webQueriesRaw.split('|').map((s) => s.trim()),
+      )
+      if (wq) entry.webSearchQueries = wq
+    }
 
     entries.push(entry)
   }

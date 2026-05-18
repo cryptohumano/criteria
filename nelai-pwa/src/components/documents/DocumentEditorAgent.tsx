@@ -26,6 +26,7 @@ import {
   FileText,
   LocateFixed,
   MoreHorizontal,
+  Pin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MarkdownContent } from '@/components/ui/markdown-content'
@@ -52,8 +53,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { PrivacyPlaceholderEntry, ResearchEvidenceLogEntry } from '@/types/documents'
 import {
+  buildAssistantResearchEvidenceBatch,
+  buildPinnedSourcesContextBlock,
   buildResearchEvidenceEntries,
-  buildResearchEvidenceEntriesFromRefs,
   collectAssistantSourceRefs,
   extractHttpUrlsFromText,
 } from '@/utils/researchEvidenceLog'
@@ -126,6 +128,10 @@ export interface DocumentEditorAgentProps {
   onResearchEvidenceAppend?: (entries: ResearchEvidenceLogEntry[]) => void
   /** Cuenta autora (p. ej. SS58) para trazabilidad en la bitácora. */
   researchEvidenceAddedBy?: string
+  /** Bitácora actual (para inyectar fuentes ancladas en el contexto). */
+  researchEvidenceLog?: ResearchEvidenceLogEntry[]
+  /** IDs de fuentes que el usuario prioriza en el agente. */
+  pinnedResearchEvidenceIds?: string[]
   onContentChange?: (content: string, description: string) => void
   appliedMods?: Record<string, number>
   onAppliedModsChange?: (mods: Record<string, number>) => void
@@ -264,6 +270,8 @@ export function DocumentEditorAgent({
   onMessagesChange,
   onResearchEvidenceAppend,
   researchEvidenceAddedBy,
+  researchEvidenceLog,
+  pinnedResearchEvidenceIds,
   onContentChange,
   appliedMods = {},
   onAppliedModsChange,
@@ -486,7 +494,12 @@ export function DocumentEditorAgent({
         `Placeholders CRITERIA activos en el documento (referencias opacas; no se incluyen aquí los textos originales):\n${lines.join('\n')}`
       )
     }
-    return parts.length ? `\n\nContexto del documento:\n${parts.join('\n')}` : ''
+    const docBlock = parts.length ? `\n\nContexto del documento:\n${parts.join('\n')}` : ''
+    const pinnedBlock = buildPinnedSourcesContextBlock(
+      researchEvidenceLog,
+      pinnedResearchEvidenceIds,
+    )
+    return docBlock + pinnedBlock
   }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -743,14 +756,18 @@ export function DocumentEditorAgent({
       if (evidenceDocId && onResearchEvidenceAppend) {
         const mergedForSources = [rawAssistant, assistantBody].filter(Boolean).join('\n\n')
         const refs = collectAssistantSourceRefs(mergedForSources, res.citations)
-        if (refs.length) {
-          const entries = buildResearchEvidenceEntriesFromRefs(evidenceDocId, refs, {
-            origin: 'assistant_message',
+        const toAppend = buildAssistantResearchEvidenceBatch(
+          evidenceDocId,
+          refs,
+          res.webSearchQueries,
+          {
             chatHistoryIndex: assistantChatIndex,
             addedBy: researchEvidenceAddedBy,
             indexedFromUserPrompt: opts.userContentDisplay,
-          })
-          void Promise.resolve(onResearchEvidenceAppend(entries)).catch((e) =>
+          },
+        )
+        if (toAppend.length) {
+          void Promise.resolve(onResearchEvidenceAppend(toAppend)).catch((e) =>
             console.error('[DocumentEditorAgent] bitácora (respuesta asistente)', e)
           )
         }
@@ -1001,6 +1018,15 @@ export function DocumentEditorAgent({
             <Bot className="h-4 w-4" />
           </div>
           <h2 className="font-bold text-sm tracking-tight text-foreground">Asistente IA</h2>
+          {pinnedResearchEvidenceIds && pinnedResearchEvidenceIds.length > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+              title="Fuentes ancladas desde la bitácora"
+            >
+              <Pin className="h-3 w-3" aria-hidden />
+              {pinnedResearchEvidenceIds.length}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedModel} onValueChange={setSelectedModel}>

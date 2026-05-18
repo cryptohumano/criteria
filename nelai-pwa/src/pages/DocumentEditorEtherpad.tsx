@@ -70,14 +70,16 @@ import {
 import { getDocument, updateDocument } from '@/utils/documentStorage'
 import {
   appendResearchEvidenceEntries,
+  buildAssistantResearchEvidenceBatch,
+  buildPinnedSourcesContextBlock,
   buildResearchEvidenceEntries,
-  buildResearchEvidenceEntriesFromRefs,
   collectAssistantSourceRefs,
   downloadResearchEvidenceCsv,
   downloadResearchEvidenceJson,
   extractHttpUrlsFromText,
   normalizeResearchEvidenceLog,
   parseResearchEvidenceLogImportJson,
+  togglePinnedResearchEvidenceId,
 } from '@/utils/researchEvidenceLog'
 import type { ResearchEvidenceLogEntry } from '@/types/documents'
 import { criteriaDomainFromAgentProfile, documentEditorPath } from '@/utils/documentListing'
@@ -202,6 +204,7 @@ export default function DocumentEditorEtherpad() {
   const [editorTourOpen, setEditorTourOpen] = useState(false)
   const [sourcesModalOpen, setSourcesModalOpen] = useState(false)
   const [researchEvidenceLog, setResearchEvidenceLog] = useState<ResearchEvidenceLogEntry[]>([])
+  const [pinnedResearchEvidenceIds, setPinnedResearchEvidenceIds] = useState<string[]>([])
   const importResearchEvidenceInputRef = useRef<HTMLInputElement>(null)
 
   const agentScoreLabels = useMemo(
@@ -415,6 +418,7 @@ export default function DocumentEditorEtherpad() {
           return
         }
         setResearchEvidenceLog(normalizeResearchEvidenceLog(doc.researchEvidenceLog))
+        setPinnedResearchEvidenceIds(doc.pinnedResearchEvidenceIds ?? [])
         setAgentProfile(
           inferAgentProfile({
             documentType: doc.type,
@@ -584,6 +588,21 @@ export default function DocumentEditorEtherpad() {
       }
     },
     [documentId],
+  )
+
+  const toggleEvidencePin = useCallback(
+    async (entryId: string) => {
+      const next = togglePinnedResearchEvidenceId(pinnedResearchEvidenceIds, entryId)
+      setPinnedResearchEvidenceIds(next)
+      if (!documentId) return
+      try {
+        await updateDocument(documentId, { pinnedResearchEvidenceIds: next })
+      } catch (e) {
+        console.warn('[Etherpad] anclar fuente', e)
+        toast.error('No se pudo guardar la fuente anclada')
+      }
+    },
+    [documentId, pinnedResearchEvidenceIds],
   )
 
   const handlePickImportResearchEvidenceJson = useCallback(() => {
@@ -835,6 +854,10 @@ export default function DocumentEditorEtherpad() {
           .find(
             (m) => m.role === 'assistant' && m.documentScore && typeof m.documentScore.score === 'number',
           )
+        const pinnedBlock = buildPinnedSourcesContextBlock(
+          researchEvidenceLog,
+          pinnedResearchEvidenceIds,
+        )
         const prevScoreContext =
           mode === 'continue' || !lastScoredAssistant
             ? ''
@@ -858,6 +881,7 @@ export default function DocumentEditorEtherpad() {
               role: 'user',
               content:
                 `Documento (texto plano):\n\n${doc}\n\n---\nInstrucción:\n${trimmed}\n${SCORE_API_REMINDER}\n` +
+                pinnedBlock +
                 prevScoreContext +
                 `\nSi tienes búsqueda web disponible, úsala y entrega una sección FUENTES con 3–8 URLs.\n` +
                 (mode === 'continue'
@@ -873,15 +897,18 @@ export default function DocumentEditorEtherpad() {
         const clean = cleanText || assistantContent.trim()
         const mergedForSources = [assistantContent, clean].filter(Boolean).join('\n\n')
         const assistantRefs = collectAssistantSourceRefs(mergedForSources, res.citations)
-        if (documentId && assistantRefs.length) {
-          void persistResearchEvidenceAppend(
-            buildResearchEvidenceEntriesFromRefs(documentId, assistantRefs, {
-              origin: 'assistant_message',
+        if (documentId) {
+          const batch = buildAssistantResearchEvidenceBatch(
+            documentId,
+            assistantRefs,
+            res.webSearchQueries,
+            {
               chatHistoryIndex: priorLen + 1,
               addedBy: selectedAccount || undefined,
               indexedFromUserPrompt: trimmed,
-            }),
+            },
           )
+          if (batch.length) void persistResearchEvidenceAppend(batch)
         }
         const assistantMsg = {
           id: `a_${Date.now()}`,
@@ -920,7 +947,19 @@ export default function DocumentEditorEtherpad() {
       }
       return true
     },
-    [AGENT_SYSTEM_PROMPT, agentMessages, documentId, padText, piiRows.length, piiScanned, parseAgentMods, persistResearchEvidenceAppend, selectedAccount],
+    [
+      AGENT_SYSTEM_PROMPT,
+      agentMessages,
+      documentId,
+      padText,
+      piiRows.length,
+      piiScanned,
+      parseAgentMods,
+      persistResearchEvidenceAppend,
+      pinnedResearchEvidenceIds,
+      researchEvidenceLog,
+      selectedAccount,
+    ],
   )
 
   useEffect(() => {
@@ -2041,8 +2080,8 @@ export default function DocumentEditorEtherpad() {
               Bitácora de fuentes
             </DialogTitle>
             <DialogDescription>
-              URLs registradas desde el agente (Etherpad). Se guardan en el documento local. Puedes importar el mismo
-              formato que «Exportar JSON»; las entradas se fusionan sin duplicar ids.
+              URLs y consultas web registradas desde el agente. Ancla fuentes con el pin para priorizarlas. Importa o
+              exporta JSON/CSV.
             </DialogDescription>
           </DialogHeader>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
@@ -2084,6 +2123,9 @@ export default function DocumentEditorEtherpad() {
             </Button>
             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
               {researchEvidenceLog.length} entrada{researchEvidenceLog.length === 1 ? '' : 's'}
+              {pinnedResearchEvidenceIds.length > 0
+                ? ` · ${pinnedResearchEvidenceIds.length} anclada${pinnedResearchEvidenceIds.length === 1 ? '' : 's'}`
+                : ''}
             </span>
           </div>
           <div className="flex min-h-0 flex-1 flex-col bg-muted/15">
@@ -2097,6 +2139,8 @@ export default function DocumentEditorEtherpad() {
                 <ResearchEvidenceLogTable
                   entries={[...researchEvidenceLog].reverse()}
                   onPersistUserComment={persistEvidenceUserComment}
+                  pinnedIds={pinnedResearchEvidenceIds}
+                  onTogglePin={(id) => void toggleEvidencePin(id)}
                 />
               )}
             </div>

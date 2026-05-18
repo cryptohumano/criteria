@@ -26,6 +26,8 @@ export interface LLMResponse {
   truncated?: boolean
   /** Solo Gemini (google_search): fuentes usadas para grounding */
   citations?: Array<{ url: string; title?: string }>
+  /** Solo Gemini (google_search): consultas web que el modelo formuló (groundingMetadata). */
+  webSearchQueries?: string[]
 }
 
 function extractGeminiCitations(payload: unknown): Array<{ url: string; title?: string }> {
@@ -72,6 +74,23 @@ function extractGeminiCitations(payload: unknown): Array<{ url: string; title?: 
   }
 
   return out.slice(0, 24)
+}
+
+function extractGeminiWebSearchQueries(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return []
+  const p = payload as { candidates?: Array<{ groundingMetadata?: { webSearchQueries?: unknown } }> }
+  const raw = p?.candidates?.[0]?.groundingMetadata?.webSearchQueries
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const q of raw) {
+    if (typeof q !== 'string') continue
+    const t = q.trim()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t.length > 500 ? t.slice(0, 500) : t)
+  }
+  return out.slice(0, 12)
 }
 
 export interface StreamCallbacks {
@@ -463,8 +482,14 @@ async function geminiChat(
     const truncated = candidate?.finishReason === 'MAX_TOKENS'
     /** Siempre extraer grounding/citationMetadata si vienen en el JSON (p. ej. tras fallback sin tools). */
     const citations = extractGeminiCitations(data)
+    const webSearchQueries = extractGeminiWebSearchQueries(data)
     return text
-      ? { content: text, truncated, citations: citations.length ? citations : undefined }
+      ? {
+          content: text,
+          truncated,
+          citations: citations.length ? citations : undefined,
+          webSearchQueries: webSearchQueries.length ? webSearchQueries : undefined,
+        }
       : { content: '', error: 'Formato de respuesta no reconocido' }
   } catch (err) {
     console.error('[LLM] Error en geminiChat:', err)
