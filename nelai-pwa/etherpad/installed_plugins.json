@@ -1,6 +1,6 @@
 {
   "plugins": [
-    { "name": "ep_etherpad-lite", "version": "2.7.3" },
+    { "name": "ep_etherpad-lite", "version": "3.1.0" },
     { "name": "ep_headings2", "version": "0.2.117" },
     { "name": "ep_table_of_contents", "version": "0.3.89" },
     { "name": "ep_markdown", "version": "11.0.20" },

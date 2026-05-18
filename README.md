@@ -28,7 +28,7 @@ agentes LLM y firmado con identidad criptográfica (C2PA + Polkadot/Substrate).
   para edición colaborativa.
 - **Backend** (`nelai-pwa/server`): Express 5 + Prisma 7 + PostgreSQL.
 - **Etherpad** (`nelai-pwa/etherpad`): imagen Docker basada en
-  `etherpad/etherpad:2.7.3` con LibreOffice y plugins (`ep_tables5`,
+  `etherpad/etherpad:3.1.0` con LibreOffice y plugins (`ep_tables5`,
   `ep_headings2`, etc.).
 - **Cripto**: `@contentauth/c2pa-node` (firma C2PA), `@polkadot/util-crypto`
   (firmas en cliente), `bcryptjs` (passwords).

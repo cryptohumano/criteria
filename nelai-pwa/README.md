@@ -35,7 +35,7 @@ verificables** con asistencia de un agente y firma criptográfica.
 | Capa | Tecnologías |
 | --- | --- |
 | Frontend | Vite 7, React 18, TypeScript, Tailwind 4, Radix UI / shadcn, vite-plugin-pwa |
-| Editor | Etherpad 2.7 (servicio Docker aparte) + Quill (vistas no colaborativas) |
+| Editor | Etherpad 3.1 (servicio Docker aparte) + Quill (vistas no colaborativas) |
 | Backend | Express 5, Prisma 7, PostgreSQL, http-proxy-middleware, bcryptjs |
 | LLM | Google Gemini (vía proxy server) |
 | C2PA | `@contentauth/c2pa-node`, certificados X.509 |

@@ -1,4 +1,4 @@
-FROM etherpad/etherpad:2.7.3
+FROM etherpad/etherpad:3.1.0
 
 # Plugins a instalar en build (separados por espacios).
 ARG ETHERPAD_PLUGINS="ep_tables5"
