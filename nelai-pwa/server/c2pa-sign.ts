@@ -29,7 +29,7 @@ import { requestIdMiddleware } from './middleware/requestId.js'
 import {
   apiGeneralLimiter,
   authCredentialsLimiter,
-  llmModelsLimiter,
+  c2paSignLimiter,
   llmProxyLimiter,
 } from './middleware/rateLimits.js'
 import { requireAuth, requirePlatformSuperadmin } from './middleware/authz.js'
@@ -38,7 +38,11 @@ import { createResolveAuthSession } from './auth/resolveSession.js'
 import { authSessions, usersByEmail, type MemoryUserRow } from './auth/memoryDevStore.js'
 import { HttpError, getHttpStatus } from './auth/httpError.js'
 import { memoryDeleteOwnAccount, prismaDeleteOwnAccount } from './auth/deleteOwnAccount.js'
-import { assertOrgLlmTokenQuota, recordLlmGeminiSuccess } from './usage/llmUsage.js'
+import {
+  beginOrgLlmTokenUsage,
+  cancelOrgLlmTokenUsage,
+  finalizeOrgLlmTokenUsage,
+} from './usage/llmUsage.js'
 import { attachEtherpadWebSocketUpgrade, mountEtherpadProxy } from './etherpad/proxy.js'
 import type { AuthSession } from './auth/types.js'
 
@@ -49,6 +53,20 @@ const CERTS_DIR = join(__dirname, 'certs')
 const PORT = Number(process.env.PORT) || Number(process.env.C2PA_PORT) || 3456
 const DIST_DIR = join(__dirname, '..', 'dist')
 const INDEX_HTML = join(DIST_DIR, 'index.html')
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+const LLM_PROXY_TIMEOUT_MS = Number(process.env.LLM_PROXY_TIMEOUT_MS) || 120_000
+const C2PA_JSON_LIMIT = process.env.C2PA_JSON_LIMIT?.trim() || '10mb'
+const API_JSON_LIMIT = process.env.API_JSON_LIMIT?.trim() || '2mb'
+
+function rejectMemoryAuthInProduction(res: express.Response): boolean {
+  if (IS_PRODUCTION && !isDatabaseConfigured()) {
+    res.status(503).json({
+      error: 'Autenticación no disponible: configure DATABASE_URL en producción.',
+    })
+    return true
+  }
+  return false
+}
 
 const app = express()
 // Detrás del edge proxy de Railway/Heroku/Cloudflare: confiar 1 hop para que
@@ -136,7 +154,45 @@ app.use(corsMiddleware)
 // Stripe webhook requiere el body "raw" para validar firma. Debe ir ANTES de express.json().
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), createBillingWebhookHandler())
 
-app.use(express.json({ limit: '50mb' }))
+// C2PA admite PDF en base64; el resto de la API usa un límite menor (anti DoS por RAM).
+app.post(
+  '/api/c2pa-sign',
+  c2paSignLimiter,
+  express.json({ limit: C2PA_JSON_LIMIT }),
+  c2paAuthGate,
+  async (req, res) => {
+    try {
+      const { pdfBase64, metadata } = req.body as { pdfBase64?: string; metadata?: Record<string, unknown> }
+      if (!pdfBase64) {
+        return res.status(400).json({ error: 'pdfBase64 es requerido' })
+      }
+
+      const buffer = Buffer.from(
+        pdfBase64.includes(',') ? pdfBase64.split(',')[1]! : pdfBase64,
+        'base64',
+      )
+
+      const inputAsset = { buffer, mimeType: 'application/pdf' as const }
+      const outputAsset: { buffer: Buffer | null } = { buffer: null }
+
+      const builder = createBuilder(metadata || {})
+      const s = getSigner()
+      const result = await builder.sign(s, inputAsset, outputAsset)
+
+      const signedBase64 = result.toString('base64')
+      res.json({ pdfBase64: signedBase64, success: true })
+    } catch (err: unknown) {
+      console.error('[C2PA] Error:', err)
+      const message = err instanceof Error ? err.message : 'Error al firmar con C2PA'
+      res.status(500).json({
+        error: message,
+        stack: process.env.NODE_ENV === 'development' && err instanceof Error ? err.stack : undefined,
+      })
+    }
+  },
+)
+
+app.use(express.json({ limit: API_JSON_LIMIT }))
 app.use('/api', apiGeneralLimiter)
 registerGoogleAuthRoutes(app)
 registerEmailVerificationRoutes(app, getPrisma)
@@ -157,37 +213,6 @@ function toAuthSession(row: MemoryUserRow, email: string): AuthSession {
     trialExpired: false,
   }
 }
-
-app.post('/api/c2pa-sign', c2paAuthGate, async (req, res) => {
-  try {
-    const { pdfBase64, metadata } = req.body as { pdfBase64?: string; metadata?: Record<string, unknown> }
-    if (!pdfBase64) {
-      return res.status(400).json({ error: 'pdfBase64 es requerido' })
-    }
-
-    const buffer = Buffer.from(
-      pdfBase64.includes(',') ? pdfBase64.split(',')[1]! : pdfBase64,
-      'base64',
-    )
-
-    const inputAsset = { buffer, mimeType: 'application/pdf' as const }
-    const outputAsset: { buffer: Buffer | null } = { buffer: null }
-
-    const builder = createBuilder(metadata || {})
-    const s = getSigner()
-    const result = await builder.sign(s, inputAsset, outputAsset)
-
-    const signedBase64 = result.toString('base64')
-    res.json({ pdfBase64: signedBase64, success: true })
-  } catch (err: unknown) {
-    console.error('[C2PA] Error:', err)
-    const message = err instanceof Error ? err.message : 'Error al firmar con C2PA'
-    res.status(500).json({
-      error: message,
-      stack: process.env.NODE_ENV === 'development' && err instanceof Error ? err.stack : undefined,
-    })
-  }
-})
 
 app.get('/api/c2pa-health', (_req, res) => {
   try {
@@ -222,6 +247,7 @@ app.post('/api/auth/register', authCredentialsLimiter, async (req, res) => {
         organization: out.organization,
       })
     }
+    if (rejectMemoryAuthInProduction(res)) return
     const inviteTok = String((req.body as RegisterBody).inviteToken || '').trim()
     if (inviteTok) {
       return res.status(503).json({ error: 'Las invitaciones requieren base de datos (DATABASE_URL + Prisma).' })
@@ -310,6 +336,7 @@ app.post('/api/auth/login', authCredentialsLimiter, async (req, res) => {
       const out = await prismaLogin(prisma, req.body as LoginBody)
       return res.json(out)
     }
+    if (rejectMemoryAuthInProduction(res)) return
     const { email, password } = (req.body as { email?: string; password?: string }) || {}
     if (!email || !password) {
       return res.status(400).json({ error: 'email y password son requeridos' })
@@ -399,9 +426,10 @@ app.use('/api/docs', createPadsRouter(requireUser))
 app.use('/api/billing', createBillingRouter(requireUser))
 app.use('/api/org', createOrgRouter(requireUser))
 
-app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
+app.post('/api/llm-proxy', llmProxyLimiter, requireUser, async (req, res) => {
   llmRequestCount++
   const requestId = req.header('X-Request-ID') || 'internal-' + Date.now()
+  const session = req.auth!
   const body = req.body as {
     apiKey?: string
     model?: string
@@ -411,55 +439,62 @@ app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
   const { apiKey, model, body: geminiBody, useServerKey } = body
   const timestamp = new Date().toLocaleTimeString()
   const serverGeminiKey = await resolveServerGeminiApiKey()
-  const session = await resolveAuthSession(req)
-  const wantsServerKey = !!useServerKey || (!apiKey && serverGeminiKey && session)
+  const wantsServerKey = !!useServerKey || (!apiKey?.trim() && !!serverGeminiKey)
 
   res.setHeader('X-Request-ID', requestId)
-  res.setHeader('X-LLM-Total-Requests', llmRequestCount.toString())
-
-  if (useServerKey && !session) {
-    console.error(`[${timestamp}] [LLM Proxy] [${requestId}] useServerKey sin sesión válida`)
-    return res.status(401).json({ error: 'Sesión requerida para usar la clave de IA en el servidor' })
+  if (!IS_PRODUCTION) {
+    res.setHeader('X-LLM-Total-Requests', llmRequestCount.toString())
   }
 
-  const effectiveKey =
-    wantsServerKey && serverGeminiKey && session ? serverGeminiKey : apiKey
+  if (useServerKey && !serverGeminiKey) {
+    return res.status(503).json({
+      error: 'La clave de IA del servidor no está configurada (GEMINI_API_KEY).',
+    })
+  }
+
+  const effectiveKey = wantsServerKey && serverGeminiKey ? serverGeminiKey : apiKey?.trim()
 
   if (!effectiveKey) {
-    console.error(`[${timestamp}] [LLM Proxy] [${requestId}] Error: falta API key o GEMINI_API_KEY + sesión`)
+    console.error(`[${timestamp}] [LLM Proxy] [${requestId}] Error: falta apiKey o GEMINI_API_KEY en servidor`)
     return res.status(400).json({
       error:
-        'Indica apiKey en el body, o configura GEMINI_API_KEY en el servidor e inicia sesión (Bearer) para el modo SaaS.',
+        'Indica apiKey en el body (BYOK) o activa useServerKey con GEMINI_API_KEY configurada en el servidor.',
     })
   }
 
   /** Coste de plataforma: sesión + `GEMINI_API_KEY` (no BYOK en cliente). */
-  const platformPays = Boolean(wantsServerKey && serverGeminiKey && session)
+  const platformPays = Boolean(wantsServerKey && serverGeminiKey)
 
+  const targetModel = model || 'gemini-2.0-flash'
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${effectiveKey}`
+
+  let tokenReservation: Awaited<ReturnType<typeof beginOrgLlmTokenUsage>> = null
   if (platformPays) {
     let prismaCheck = null as Awaited<ReturnType<typeof getPrisma>>
     try {
       prismaCheck = await getPrisma()
     } catch (e) {
       console.error(`[${timestamp}] [LLM Proxy] [${requestId}] Prisma:`, e)
+      return res.status(503).json({ error: 'Base de datos no disponible para cupo de IA.', requestId })
     }
-    if (prismaCheck && session) {
-      try {
-        await assertOrgLlmTokenQuota(prismaCheck, session, requestId)
-      } catch (e: unknown) {
-        if (e instanceof HttpError) {
-          return res.status(e.statusCode).json({ error: e.message, requestId })
-        }
-        throw e
+    if (!prismaCheck) {
+      return res.status(503).json({
+        error: 'El modo SaaS de IA requiere DATABASE_URL para aplicar cupos.',
+        requestId,
+      })
+    }
+    try {
+      tokenReservation = await beginOrgLlmTokenUsage(prismaCheck, session, requestId, targetModel)
+    } catch (e: unknown) {
+      if (e instanceof HttpError) {
+        return res.status(e.statusCode).json({ error: e.message, requestId })
       }
+      throw e
     }
   }
 
-  const targetModel = model || 'gemini-2.0-flash'
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${effectiveKey}`
-
   console.log(
-    `[${timestamp}] [LLM Proxy] [#${llmRequestCount}] [${requestId}] 🚀 Forwarding to Google: ${targetModel}${platformPays ? ' (clave servidor)' : ''}`,
+    `[${timestamp}] [LLM Proxy] [#${llmRequestCount}] [${requestId}] 🚀 Forwarding to Google: ${targetModel}${platformPays ? ' (clave servidor)' : ' (BYOK)'}`,
   )
 
   try {
@@ -467,11 +502,18 @@ app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(geminiBody),
+      signal: AbortSignal.timeout(LLM_PROXY_TIMEOUT_MS),
     })
 
     const data = (await response.json()) as Record<string, unknown>
 
     if (!response.ok) {
+      if (tokenReservation) {
+        const prismaCancel = await getPrisma()
+        if (prismaCancel) {
+          await cancelOrgLlmTokenUsage(prismaCancel, tokenReservation)
+        }
+      }
       const ge = data.error as { message?: string; status?: string } | undefined
       const extra = ge?.message ? `: ${ge.message}` : ''
       console.error(
@@ -487,18 +529,13 @@ app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
       return res.status(response.status).json(data)
     }
 
-    if (platformPays && session) {
-      let prismaUse = null as Awaited<ReturnType<typeof getPrisma>>
-      try {
-        prismaUse = await getPrisma()
-      } catch (e) {
-        console.error(`[${timestamp}] [LLM Proxy] [${requestId}] Prisma (usage):`, e)
-      }
+    if (platformPays && tokenReservation) {
+      const prismaUse = await getPrisma()
       if (prismaUse) {
         try {
-          await recordLlmGeminiSuccess(prismaUse, session, data, requestId, targetModel)
+          await finalizeOrgLlmTokenUsage(prismaUse, tokenReservation, data, targetModel)
         } catch (e) {
-          console.error(`[${timestamp}] [LLM Proxy] [${requestId}] [usage] falló al guardar:`, e)
+          console.error(`[${timestamp}] [LLM Proxy] [${requestId}] [usage] falló al ajustar reserva:`, e)
         }
       }
     }
@@ -506,62 +543,29 @@ app.post('/api/llm-proxy', llmProxyLimiter, async (req, res) => {
     console.log(`[${timestamp}] [LLM Proxy] [${requestId}] ✅ Success`)
     res.json(data)
   } catch (error: unknown) {
+    if (tokenReservation) {
+      const prismaCancel = await getPrisma()
+      if (prismaCancel) {
+        await cancelOrgLlmTokenUsage(prismaCancel, tokenReservation)
+      }
+    }
     if (error instanceof HttpError) {
       return res.status(error.statusCode).json({ error: error.message, requestId })
     }
     const msg = error instanceof Error ? error.message : String(error)
+    const timedOut = error instanceof Error && error.name === 'TimeoutError'
     console.error(`[${timestamp}] [LLM Proxy] [${requestId}] 🔥 Connection Error:`, msg)
-    res.status(500).json({ error: 'Error interno en el proxy de CriterIA' })
+    res.status(timedOut ? 504 : 500).json({
+      error: timedOut ? 'Tiempo de espera agotado al contactar con Google Gemini.' : 'Error interno en el proxy de CriterIA',
+    })
   }
 })
 
 app.post('/api/llm-proxy/', (req, res) => res.redirect(307, '/api/llm-proxy'))
 
 app.get('/api/llm-proxy-health', (_req, res) =>
-  res.json({ status: 'ok', requests: llmRequestCount }),
+  res.json(IS_PRODUCTION ? { status: 'ok' } : { status: 'ok', requests: llmRequestCount }),
 )
-
-app.get('/api/llm-models', llmModelsLimiter, async (req, res) => {
-  const apiKey = req.query.key
-  if (!apiKey || typeof apiKey !== 'string') {
-    return res.status(400).json({ error: 'API Key es requerida como query parameter (?key=...)' })
-  }
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-
-  try {
-    const response = await fetch(url)
-    const data = (await response.json()) as {
-      models?: Array<{
-        name?: string
-        displayName?: string
-        description?: string
-        inputTokenLimit?: number
-        supportedGenerationMethods?: string[]
-      }>
-    }
-
-    if (!response.ok) {
-      return res.status(response.status).json(data)
-    }
-
-    const chatModels =
-      data.models?.filter((m) => m.supportedGenerationMethods?.includes('generateContent')) || []
-
-    res.json({
-      total: data.models?.length || 0,
-      chatModelsCount: chatModels.length,
-      chatModels: chatModels.map((m) => ({
-        name: (m.name || '').replace('models/', ''),
-        displayName: m.displayName,
-        description: m.description,
-        inputTokenLimit: m.inputTokenLimit,
-      })),
-    })
-  } catch {
-    res.status(500).json({ error: 'Error al consultar modelos' })
-  }
-})
 
 // --- Reverse-proxy a Etherpad (same-origin) ---
 // Debe ir ANTES del SPA fallback: si /pad o /socket.io caen en el catch-all,
@@ -602,6 +606,13 @@ app.use((req, res) => {
     )
 })
 
+if (IS_PRODUCTION && !isDatabaseConfigured()) {
+  console.error(
+    '[CriterIA] FATAL: DATABASE_URL es obligatoria en producción (auth, cupos LLM, facturación).',
+  )
+  process.exit(1)
+}
+
 const httpServer = app.listen(PORT, () => {
   console.log(`[CriterIA] Servidor en http://localhost:${PORT}`)
   if (fs.existsSync(INDEX_HTML)) {
@@ -619,7 +630,7 @@ const httpServer = app.listen(PORT, () => {
   console.log(
     `[CriterIA] POST /api/c2pa-sign - Embeber manifiesto en PDF (${c2paSigningRequiresSession() ? 'Bearer obligatorio' : 'Bearer opcional'})`,
   )
-  console.log('[CriterIA] POST /api/llm-proxy - Proxy Gemini (evita CORS; opcional GEMINI_API_KEY + Bearer)')
+  console.log('[CriterIA] POST /api/llm-proxy - Proxy Gemini (Bearer obligatorio; GEMINI_API_KEY para modo SaaS)')
   console.log(
     '[CriterIA] GET /api/usage/llm | /api/platform/* (superadmin) | POST /api/auth/*',
   )

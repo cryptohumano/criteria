@@ -5,6 +5,7 @@
 import type { Request, Response, Express } from 'express'
 import { randomBytes } from 'node:crypto'
 import { getPrisma } from '../db.js'
+import { googleOAuthStartLimiter } from '../middleware/rateLimits.js'
 import { prismaLoginWithGoogle } from '../prisma-auth.js'
 import { HttpError, getHttpStatus } from '../auth/httpError.js'
 
@@ -86,7 +87,7 @@ async function fetchGoogleProfile(accessToken: string) {
 }
 
 export function registerGoogleAuthRoutes(app: Express) {
-  app.get('/api/auth/google/start', (req: Request, res: Response) => {
+  app.get('/api/auth/google/start', googleOAuthStartLimiter, (req: Request, res: Response) => {
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim()
     if (!clientId) {
       return res.status(503).json({

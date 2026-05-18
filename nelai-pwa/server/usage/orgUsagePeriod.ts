@@ -7,6 +7,8 @@
  * - **Resto**: mes calendario UTC.
  */
 import type { PrismaClient } from '@prisma/client'
+
+type UsageDb = Pick<PrismaClient, 'usageEvent' | 'organization'>
 import { endOfRollingFortnight, startOfRollingFortnight, startOfUtcMonth } from './period.js'
 import { normalizePlanId } from './planLimits.js'
 
@@ -18,7 +20,7 @@ function shouldUseStripeBillingPeriod(status: string | null | undefined): boolea
 export type UsagePeriodSource = 'stripe' | 'utc-month' | 'rolling-fortnight'
 
 export async function resolveOrgUsagePeriod(
-  prisma: PrismaClient,
+  prisma: UsageDb,
   organizationId: string,
   planId: string,
 ): Promise<{ start: Date; end: Date | null; source: UsagePeriodSource }> {

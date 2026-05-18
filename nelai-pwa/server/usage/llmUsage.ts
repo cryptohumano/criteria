@@ -2,6 +2,9 @@
  * Cuotas mensuales y registro de uso para el proxy LLM (tokens agregados).
  */
 import type { PrismaClient } from '@prisma/client'
+
+/** Cliente Prisma o cliente de transacción (mismos modelos de uso). */
+type UsageDb = Pick<PrismaClient, 'usageEvent' | 'organization'>
 import { HttpError } from '../auth/httpError.js'
 import { USAGE_KIND_LLM_GEMINI } from './kinds.js'
 import { getPlanEntitlements } from '../billing/planCatalog.js'
@@ -12,7 +15,7 @@ import { getLlmTokenLimitForPlan, isLlmQuotaEnforced } from './planLimits.js'
 import type { AuthSession } from '../auth/types.js'
 
 export async function sumOrgLlmTokensThisMonth(
-  prisma: PrismaClient,
+  prisma: UsageDb,
   organizationId: string,
   planId: string
 ): Promise<number> {
@@ -29,9 +32,30 @@ export async function sumOrgLlmTokensThisMonth(
   return agg._sum.quantity ?? 0
 }
 
+const DEFAULT_LLM_RESERVE_TOKENS = 8_000
+
+function llmReserveTokens(): number {
+  const raw = process.env.LLM_PROXY_RESERVE_TOKENS?.trim()
+  if (raw) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  }
+  return DEFAULT_LLM_RESERVE_TOKENS
+}
+
+function quotaExceededError(requestId: string): HttpError {
+  const err = new HttpError(
+    'Límite de consumo de IA de tu plan alcanzado para el periodo actual. Contacta al administrador o mejora el plan.',
+    402,
+  )
+  ;(err as Error & { requestId?: string }).requestId = requestId
+  return err
+}
+
 /**
  * Antes de llamar al proveedor: bloquea si la org ya agotó el cupo de tokens del plan.
  * Solo aplica con Prisma (no en modo memoria sin DB).
+ * @deprecated Preferir {@link beginOrgLlmTokenUsage} para evitar condiciones de carrera.
  */
 export async function assertOrgLlmTokenQuota(
   prisma: PrismaClient,
@@ -44,13 +68,86 @@ export async function assertOrgLlmTokenQuota(
   if (limit === 0) return
   const used = await sumOrgLlmTokensThisMonth(prisma, session.organizationId, session.plan)
   if (used >= limit) {
-    const err = new HttpError(
-      'Límite de consumo de IA de tu plan alcanzado para el periodo actual. Contacta al administrador o mejora el plan.',
-      402,
-    )
-    ;(err as Error & { requestId?: string }).requestId = requestId
-    throw err
+    throw quotaExceededError(requestId)
   }
+}
+
+export type LlmTokenReservation = { eventId: string; reservedTokens: number }
+
+/**
+ * Reserva cupo de tokens antes de llamar a Gemini (evita picos paralelos que superen el límite).
+ * Devuelve null si no hay cuota aplicable o no se persiste uso (BYOK sin coste de plataforma).
+ */
+export async function beginOrgLlmTokenUsage(
+  prisma: PrismaClient,
+  session: AuthSession,
+  requestId: string,
+  model: string,
+): Promise<LlmTokenReservation | null> {
+  assertTrialActiveOrPaid(session)
+  if (!isLlmQuotaEnforced()) return null
+  const limit = getLlmTokenLimitForPlan(session.plan)
+  if (limit === 0) return null
+
+  const reservedTokens = llmReserveTokens()
+
+  return prisma.$transaction(async (tx) => {
+    const used = await sumOrgLlmTokensThisMonth(tx, session.organizationId, session.plan)
+    if (used + reservedTokens > limit) {
+      throw quotaExceededError(requestId)
+    }
+    const ev = await tx.usageEvent.create({
+      data: {
+        organizationId: session.organizationId,
+        userId: session.userId,
+        kind: USAGE_KIND_LLM_GEMINI,
+        unit: 'token',
+        quantity: reservedTokens,
+        model: model || null,
+        requestId: requestId.length > 500 ? requestId.slice(0, 500) : requestId,
+        meta: {
+          provider: 'google',
+          source: 'llm-proxy',
+          status: 'pending',
+          reservedTokens,
+        },
+      },
+    })
+    return { eventId: ev.id, reservedTokens }
+  })
+}
+
+/** Ajusta la reserva al consumo real reportado por Gemini. */
+export async function finalizeOrgLlmTokenUsage(
+  prisma: PrismaClient,
+  reservation: LlmTokenReservation,
+  data: Record<string, unknown>,
+  model: string,
+): Promise<void> {
+  const actual = Math.max(1, extractGeminiTokenTotal(data))
+  const usageMetadata = extractGeminiUsageMetadata(data)
+  await prisma.usageEvent.update({
+    where: { id: reservation.eventId },
+    data: {
+      quantity: actual,
+      model: model || null,
+      meta: {
+        provider: 'google',
+        source: 'llm-proxy',
+        status: 'completed',
+        reservedTokens: reservation.reservedTokens,
+        usageMetadata,
+      },
+    },
+  })
+}
+
+/** Libera la reserva si la llamada a Gemini falló antes de completarse. */
+export async function cancelOrgLlmTokenUsage(
+  prisma: PrismaClient,
+  reservation: LlmTokenReservation,
+): Promise<void> {
+  await prisma.usageEvent.delete({ where: { id: reservation.eventId } }).catch(() => {})
 }
 
 function extractGeminiTokenTotal(data: Record<string, unknown>): number {

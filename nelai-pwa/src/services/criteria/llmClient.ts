@@ -406,9 +406,11 @@ async function geminiChat(
       }
       if (requestId) headers['X-Request-ID'] = requestId
       const payload: Record<string, unknown> = { model, body }
+      if (workspaceToken) {
+        headers.Authorization = `Bearer ${workspaceToken}`
+      }
       if (geminiServerProxy && workspaceToken) {
         payload.useServerKey = true
-        headers.Authorization = `Bearer ${workspaceToken}`
       } else {
         payload.apiKey = String(config.apiKey || '')
       }

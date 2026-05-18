@@ -34,6 +34,16 @@ export function getLlmModelsPerMinuteMax(): number {
   return numFromEnv('RATE_LIMIT_LLM_MODELS_PER_MIN', 100, 30)
 }
 
+/** POST /api/c2pa-sign por minuto (PDF en base64). */
+export function getC2paSignPerMinuteMax(): number {
+  return numFromEnv('RATE_LIMIT_C2PA_PER_MIN', 30, 12)
+}
+
+/** GET /api/auth/google/start por minuto (anti abuso OAuth). */
+export function getGoogleOAuthStartPerMinuteMax(): number {
+  return numFromEnv('RATE_LIMIT_GOOGLE_OAUTH_START_PER_MIN', 60, 20)
+}
+
 /** Clics en enlace mágico / intentos de verificación por IP (ventana 15 min). */
 export function getVerifyEmailIpMax(): number {
   return numFromEnv('RATE_LIMIT_VERIFY_EMAIL_IP_MAX', 80, 40)

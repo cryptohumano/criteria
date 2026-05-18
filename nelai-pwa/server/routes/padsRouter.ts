@@ -114,10 +114,11 @@ export function createPadsRouter(requireUser: RequestHandler) {
       // Cookie de sesión (Etherpad la busca como `sessionID`).
       const validUntil = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
       const sessionID = await createSession(baseUrl, apiKey, groupID, authorID, validUntil)
+      const isProd = process.env.NODE_ENV === 'production'
       res.cookie('sessionID', sessionID, {
-        httpOnly: false,
+        httpOnly: true,
         sameSite: 'lax',
-        secure: false,
+        secure: isProd,
         path: '/',
       })
 

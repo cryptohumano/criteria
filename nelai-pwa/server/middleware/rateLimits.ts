@@ -6,7 +6,8 @@ import rateLimit from 'express-rate-limit'
 import {
   getApiPerMinuteMax,
   getAuthMax,
-  getLlmModelsPerMinuteMax,
+  getC2paSignPerMinuteMax,
+  getGoogleOAuthStartPerMinuteMax,
   getLlmProxyPerMinuteMax,
   getResendVerificationIpMax,
   getVerifyEmailIpMax,
@@ -49,12 +50,23 @@ export const llmProxyLimiter = rateLimit({
   ...devSkipAll,
 })
 
-/** Listado de modelos (query con API key en URL). */
-export const llmModelsLimiter = rateLimit({
+/** Firma C2PA (cuerpo grande en base64). */
+export const c2paSignLimiter = rateLimit({
   windowMs: ms(1),
-  max: getLlmModelsPerMinuteMax(),
+  max: getC2paSignPerMinuteMax(),
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de firma C2PA. Espera un momento.' },
+  ...devSkipAll,
+})
+
+/** Inicio de flujo Google OAuth. */
+export const googleOAuthStartLimiter = rateLimit({
+  windowMs: ms(1),
+  max: getGoogleOAuthStartPerMinuteMax(),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de inicio de sesión con Google. Espera un momento.' },
   ...devSkipAll,
 })
 
