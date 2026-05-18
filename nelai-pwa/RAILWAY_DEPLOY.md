@@ -64,6 +64,7 @@ detalla los pasos manuales en Railway, Stripe, Google Cloud y MailerSend.
    EDIT_ONLY=true
    SOCKETIO_MAX_HTTP_BUFFER_SIZE=10000000
    SOFFICE=/usr/bin/soffice
+   PORT=9001
 
    # API key — se materializa en /opt/etherpad-lite/APIKEY.txt vía entrypoint.sh
    # Generala en local con:  openssl rand -hex 32
@@ -121,7 +122,8 @@ NODE_ENV=production
 DATABASE_URL=${{criteria-postgres.DATABASE_URL}}
 
 # === Etherpad (red privada) ===
-ETHERPAD_INTERNAL_URL=http://${{etherpad.RAILWAY_PRIVATE_DOMAIN}}:9001
+# En el servicio etherpad define también PORT=9001 (Etherpad escucha ahí).
+ETHERPAD_INTERNAL_URL=http://${{etherpad.RAILWAY_PRIVATE_DOMAIN}}:${{etherpad.PORT}}
 # El API usa ETHERPAD_INTERNAL_URL si falta ETHERPAD_BASE_URL (misma URL en Railway).
 ETHERPAD_PUBLIC_URL=/pad
 ETHERPAD_API_KEY=<MISMO valor que el servicio etherpad>
@@ -275,7 +277,7 @@ retornar 2xx salvo donde se indique.
 | Build `criteria-api`: `--mount=type=cache ... missing the cacheKey prefix from its id` o `is missing an id argument` | El builder de Railway no acepta cache mounts portables (exige prefijo `s/<service-id>-…`) | Eliminados del Dockerfile: el build no usa cache mount. Tras pull, redeploy. |
 | Build `etherpad`: `"/entrypoint.sh": not found` | Root Directory mal: el contexto no incluye `entrypoint.sh` donde el Dockerfile lo espera | Usa **raíz del repo** + Dockerfile path `nelai-pwa/etherpad/Dockerfile` (ver §1.3). No uses solo `nelai-pwa/etherpad` salvo que adaptes el Dockerfile. |
 | Build `criteria-api`: `".yarn/patches": not found` o `"package.json": not found` | Root Directory vacío + Dockerfile que no usa prefijo `nelai-pwa/` | Asegura **Dockerfile path:** `nelai-pwa/Dockerfile`; el Dockerfile actual ya hace `COPY nelai-pwa/...`. |
-| 502 al cargar `/pad` | `ETHERPAD_INTERNAL_URL` mal o servicio etherpad caído | Revisa logs del servicio etherpad y la variable. |
+| 502 al cargar `/pad` o `Etherpad: fetch failed` en `/api/docs/…/pad/*` | `criteria` no alcanza el contenedor etherpad (puerto/host) o etherpad no arrancó | En **etherpad**: `PORT=9001` y logs con «Server is running». En **criteria**: `ETHERPAD_INTERNAL_URL=http://${{etherpad.RAILWAY_PRIVATE_DOMAIN}}:${{etherpad.PORT}}` (no uses `:9001` fijo si Railway asignó otro `PORT`). Misma `ETHERPAD_API_KEY` en ambos. |
 | Pads no sincronizan | `upgrade` no llega al proxy | Verifica `attachEtherpadWebSocketUpgrade` en logs y que `ws: true` esté en el middleware. |
 | Webhook Stripe falla | `STRIPE_WEBHOOK_SECRET` desactualizado tras recrear el endpoint | Copia el nuevo `whsec_...` y redeploya. |
 | Login Google: `redirect_uri_mismatch` | URI no autorizado | Añade exactamente `https://<dominio>/api/auth/google/callback` en Google Console. |
